@@ -23,7 +23,13 @@ _SYSTEM = (
     "Base EVERY recommendation strictly on CS Direkt's documented capabilities, financials and past "
     "projects — never assume capability beyond what the profile/portfolio shows. For PARTIAL/INELIGIBLE "
     "tenders, state the tender type, the specific gap that blocks eligibility, and exactly what CS Direkt "
-    "would need to fulfil to qualify. Return ONLY JSON."
+    "would need to fulfil to qualify. "
+    "Be SPECIFIC and analytical — never generic boilerplate; every risk, compliance note and recommendation "
+    "must reference THIS tender's actual terms. When the source text carries a page/section marker, cite it "
+    "(e.g. 'per RFP p.12'). Explain the procurement model's basis and the commercial structure's payment "
+    "terms. For penalty clauses, state the penalty's cap/end period. Rate compliance complexity Low/Medium/"
+    "High WITH the reason. For experience, refer to CS Direkt's completion certificates for similar work. If "
+    "the documents are too thin to support a real analysis, SAY SO explicitly instead of guessing. Return ONLY JSON."
 )
 
 

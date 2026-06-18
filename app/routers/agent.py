@@ -24,10 +24,12 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 _SYSTEM = (
     "You are CS Direkt's tender assistant. You orchestrate the pipeline.\n"
-    "- 'find / fetch / get N tenders on <keyword>' (e.g. 'find 5 tenders on museum') means FETCH FRESH "
-    "from TenderKart and process them → call run_fresh_scan(keyword='museum', limit=5). The pipeline runs "
-    "in the background and posts a report (which are eligible / partial / rejected) when it finishes.\n"
-    "- 'show / list / top tenders already found' → call search_tenders.\n"
+    "- ANY 'find / fetch / get / search N tenders on <keyword>' (e.g. 'find 5 tenders on museum') means "
+    "FETCH LIVE FROM THE TENDERKART API — ALWAYS call run_fresh_scan(keyword='museum', limit=5). This NEVER "
+    "reads from the database; it pulls fresh from TenderKart and re-processes (duplicates are fine). The "
+    "pipeline runs in the background and posts a report (eligible / partial / rejected) when it finishes.\n"
+    "- ONLY call search_tenders if the user EXPLICITLY says 'already found' / 'in the database' / 'stored' / "
+    "'previously processed'. Never use it for a plain 'find ... tenders' request.\n"
     "- 'stop / cancel / kill the scan' → call stop_scan (halts the running background scan).\n"
     "After run_fresh_scan returns, tell the user the scan started and the report will appear here when done. "
     "After search_tenders, list each as '<title> — <authority> — <value> — <verdict> (<score>/100)'. "

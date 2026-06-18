@@ -160,6 +160,11 @@ def _tctx(t):
         "documents_required": _slist(t.get("documents_required")),
         "bidding_capacity": (_clean(t.get("bidding_capacity")) or "—"),
         "multiplier_factor": (_clean(t.get("multiplier_factor")) or "—"),
+        "raw_requirements": [
+            {"label": a.get("label", ""), "value": a.get("value", ""),
+             "page": (a.get("page") or a.get("document") or "—")}
+            for a in (ed.get("all_fields") or []) if isinstance(a, dict) and (a.get("label") or a.get("value"))
+        ][:30],
         "eligibility_flags": [
             {"field": (fl.get("field", "").replace("_", " ").title()), "required": fl.get("required"),
              "capacity": fl.get("capacity"), "over_pct": fl.get("over_pct"),
