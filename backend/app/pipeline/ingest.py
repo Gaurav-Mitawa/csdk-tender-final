@@ -73,7 +73,8 @@ def _valid_date(s) -> str | None:
 
 # ── public API used by the router ─────────────────────────────────────────────
 def start_run(triggered_by: str = "manual", filter_ids: list[str] | None = None,
-              limit: int | None = None, reprocess: bool | None = None) -> str | None:
+              limit: int | None = None, reprocess: bool | None = None,
+              exclude_keywords: list[str] | None = None) -> str | None:
     global _active
     with _lock:
         if _active or store.is_running():
@@ -85,7 +86,8 @@ def start_run(triggered_by: str = "manual", filter_ids: list[str] | None = None,
         with _lock:
             _active = False
         raise
-    threading.Thread(target=_run_thread, args=(run_id, filter_ids, limit, reprocess), daemon=True).start()
+    threading.Thread(target=_run_thread,
+                     args=(run_id, filter_ids, limit, reprocess, exclude_keywords), daemon=True).start()
     return run_id
 
 
@@ -94,10 +96,11 @@ def latest_run_status() -> dict:
 
 
 def _run_thread(run_id: str, filter_ids: list[str] | None,
-                limit: int | None = None, reprocess: bool | None = None) -> None:
+                limit: int | None = None, reprocess: bool | None = None,
+                exclude_keywords: list[str] | None = None) -> None:
     global _active
     try:
-        run_cycle(run_id, filter_ids, limit, reprocess)
+        run_cycle(run_id, filter_ids, limit, reprocess, exclude_keywords)
     except Exception as exc:  # noqa: BLE001
         log.exception("cycle crashed")
         store.emit(run_id, "error", f"Cycle failed: {exc}")
@@ -109,7 +112,8 @@ def _run_thread(run_id: str, filter_ids: list[str] | None,
 
 # ── the cycle ─────────────────────────────────────────────────────────────────
 def run_cycle(run_id: str, filter_ids: list[str] | None = None,
-              limit: int | None = None, reprocess: bool | None = None) -> None:
+              limit: int | None = None, reprocess: bool | None = None,
+              exclude_keywords: list[str] | None = None) -> None:
     cap = int(limit) if limit else settings.max_tenders_per_run
     explicit = limit is not None   # chat 'find N' -> show X/N; manual full scan -> show running count
     reproc = settings.reprocess_existing if reprocess is None else bool(reprocess)
@@ -126,6 +130,14 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
     if settings.upload_documents:
         store.ensure_bucket()
     prof = load_profile()  # editable RULES config (financials, scope keywords)
+    # Per-scan exclusions (e.g. chat: "exclude light, show, security"). Added to the profile's
+    # exclude list so the cost-gate + qualifier drop them as EXCLUDED (a strong title match
+    # overrides any incidental scope hit) — they never reach the report.
+    if exclude_keywords:
+        _extra = [str(e).strip().lower() for e in exclude_keywords if str(e).strip()]
+        if _extra:
+            prof.exclude_keywords = list(prof.exclude_keywords or []) + _extra
+            store.emit(run_id, "info", f"Excluding keywords: {', '.join(_extra)}")
 
     filters = tk.list_filters()
     if filter_ids:
@@ -136,6 +148,8 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
 
     found = qualified = sites_done = 0
     stopped = False
+    seen: set[str] = set()   # tk_uuids handled this run — TenderKart returns the same tender
+    #                          under multiple category filters; handle each ONCE (no dup count).
 
     def _tick(n: int) -> None:
         if explicit:   # chat 'find N' → fraction X/N
@@ -163,6 +177,9 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                     store.emit(run_id, "warn", "Reached the tender cap — stopping early.")
                     break
                 tk_uuid = t["id"]
+                if tk_uuid in seen:
+                    continue   # same tender under another filter — already handled this run
+                seen.add(tk_uuid)
                 # Below the ₹-floor (value disclosed) → reject outright, do NOT store.
                 _val_cr = (t.get("tender_value") or 0) / 1e7
                 if _val_cr and _val_cr < prof.min_tender_value_cr:
@@ -356,7 +373,18 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
     ex: dict = {}
     ex_log: dict = {}
     if combined_md and not pre_excluded:
-        ex, ex_log = hybrid_extract(combined_md)
+        # Scope-fit context comes entirely from THIS customer's Supabase profile (generic,
+        # multi-tenant — nothing hardcoded). The LLM judges whether the tender truly fits.
+        _inc = (profile.include_keywords or []) or [
+            kw for kws in (profile.scope_keywords or {}).values() for kw in (kws or [])
+        ]
+        scope_ctx = {
+            "company": getattr(profile, "company_name", "") or "",
+            "scope_description": getattr(profile, "scope_description", "") or "",
+            "include": _inc,
+            "exclude": profile.exclude_keywords or [],
+        }
+        ex, ex_log = hybrid_extract(combined_md, scope_ctx)
 
     content_hash = hashlib.sha256(
         (json.dumps(detail, sort_keys=True, default=str) + "".join(hashes)).encode()
@@ -412,6 +440,7 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
             "all_fields": ex.get("all_fields"),
             "key_dates": ex.get("key_dates"),
             "page_refs": ex.get("page_refs"),
+            "scope_fit": ex.get("scope_fit"),   # LLM scope/eligibility judgment (drives the verdict gate)
             "extras": ex.get("extras"),
             "tender_type_confidence": ex.get("tender_type_confidence"),
             "tender_type_basis": ex.get("tender_type_basis"),

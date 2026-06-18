@@ -33,6 +33,10 @@ _SYSTEM = (
     "user to list keywords and do NOT invent unrelated keywords (e.g. catering, security, logistics) — CS "
     "Direkt's sectors are fixed (museums, light & sound, events, exhibitions, science centres, heritage, "
     "tourism, content). Just start the scan. Prefer to ACT; only ask a clarifying question if truly ambiguous.\n"
+    "- If the user says to EXCLUDE / leave out / skip certain keywords (e.g. 'exclude light, show and "
+    "security', 'without security tenders'), pass them as run_fresh_scan(exclude_keywords=[...]). Extract the "
+    "individual words (split on 'and'/commas): 'light and show and security' → [\"light\",\"show\",\"security\"]. "
+    "NEVER claim you excluded something unless you actually passed it in exclude_keywords.\n"
     "- ONLY call search_tenders if the user EXPLICITLY says 'already found' / 'in the database' / 'stored' / "
     "'previously processed'. Never use it for a plain 'find ... tenders' request.\n"
     "- 'stop / cancel / kill the scan' → call stop_scan (halts the running background scan).\n"
@@ -50,6 +54,8 @@ _TOOLS = [
         "parameters": {"type": "object", "properties": {
             "keyword": {"type": "string", "description": "sector/keyword, e.g. museum, light and sound, heritage; omit for all sectors"},
             "limit": {"type": "integer", "description": "how many tenders to fetch & process"},
+            "exclude_keywords": {"type": "array", "items": {"type": "string"},
+                                 "description": "keywords to EXCLUDE — any tender whose title/scope contains one is dropped from the report. E.g. user says 'exclude light, show and security' → [\"light\",\"show\",\"security\"]."},
         }}}},
     {"type": "function", "function": {
         "name": "search_tenders",
@@ -97,7 +103,8 @@ def _search_tenders(keyword: str, limit: int = 10, status: str = "any") -> dict:
     return {"count": len(out), "tenders": out}
 
 
-def _run_fresh_scan(keyword: str | None = None, limit: int | None = None) -> dict:
+def _run_fresh_scan(keyword: str | None = None, limit: int | None = None,
+                    exclude_keywords: list[str] | None = None) -> dict:
     n = max(1, int(limit)) if limit else settings.max_tenders_per_run
     fids = None
     if keyword and keyword.strip():
@@ -107,16 +114,19 @@ def _run_fresh_scan(keyword: str | None = None, limit: int | None = None) -> dic
             fids = [f["id"] for f in TenderKart().list_filters() if kw in (f.get("name") or "").lower()] or None
         except Exception as exc:  # noqa: BLE001
             log.warning("filter resolve failed: %s", exc)
+    excl = [str(e).strip() for e in (exclude_keywords or []) if str(e).strip()] or None
     # reprocess=False: a tender is processed ONCE and its verdict is locked. Re-running
     # must NOT re-extract the same tender (the LLM returns slightly different numbers each
     # time, which flips ELIGIBLE/PARTIAL/REJECTED) — already-ingested tenders are skipped,
     # so each scan only processes genuinely NEW tenders.
-    run_id = ingest.start_run(triggered_by="chat", filter_ids=fids, limit=n, reprocess=False)
+    run_id = ingest.start_run(triggered_by="chat", filter_ids=fids, limit=n,
+                              reprocess=False, exclude_keywords=excl)
     if run_id is None:
         return {"started": False, "message": "A scan is already running — its report will appear here when it finishes."}
     scope = f"'{keyword}'" if (keyword and fids) else "all sectors"
-    return {"started": True, "run_id": run_id, "limit": n,
-            "message": f"Scanning up to {n} {scope} tenders from TenderKart. "
+    excl_note = f" (excluding: {', '.join(excl)})" if excl else ""
+    return {"started": True, "run_id": run_id, "limit": n, "excluded": excl or [],
+            "message": f"Scanning up to {n} {scope} tenders from TenderKart{excl_note}. "
                        "The report (which are eligible / partial / rejected) will appear here when the scan finishes."}
 
 
@@ -172,7 +182,7 @@ def _dispatch(name: str, args: dict) -> dict:
         if name == "search_tenders":
             return _search_tenders(args.get("keyword", ""), int(args.get("limit") or 10), args.get("status", "any"))
         if name == "run_fresh_scan":
-            return _run_fresh_scan(args.get("keyword"), args.get("limit"))
+            return _run_fresh_scan(args.get("keyword"), args.get("limit"), args.get("exclude_keywords"))
         if name == "stop_scan":
             active = ingest.request_stop()
             return {"stopped": active,

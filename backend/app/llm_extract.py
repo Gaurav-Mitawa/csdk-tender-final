@@ -32,11 +32,37 @@ _SEMANTIC = [
 _SYSTEM = (
     "You extract facts from Indian government tender documents. Report ONLY what is "
     "written; use null/empty when absent; never invent. The text is segmented by "
-    "'=== DOCUMENT: <file> | PAGE <n> ===' markers — cite document + page for all_fields/key_dates."
+    "'=== DOCUMENT: <file> | PAGE <n> ===' markers. EVERY page reference you emit MUST name the "
+    "EXACT document filename from those markers (e.g. 'p2 of Tendernotice_1.pdf', 'p5 of BOQ.xls') "
+    "— NEVER a generic label like 'RFP' or a bare page number like 'p2'."
 )
 
 
-def _openai_fields(text: str, needed: list[str]) -> dict:
+def _scope_block(scope_ctx: dict | None) -> str:
+    """Generic, profile-driven scope-fit instruction. The bidding company's business and
+    keywords come from THEIR Supabase profile — nothing is hardcoded to any one customer."""
+    if not scope_ctx:
+        return ""
+    desc = (scope_ctx.get("scope_description") or "").strip()
+    inc = ", ".join(scope_ctx.get("include") or [])[:1200]
+    exc = ", ".join(scope_ctx.get("exclude") or [])[:1200]
+    company = (scope_ctx.get("company") or "the bidding company").strip()
+    return (
+        f"\n\nSCOPE-FIT JUDGEMENT for {company}:\n"
+        f"- Business / service lines: {desc or '(see in-scope keywords)'}\n"
+        f"- IN-SCOPE keywords: {inc or '(none provided)'}\n"
+        f"- OUT-OF-SCOPE / excluded: {exc or '(none provided)'}\n"
+        "Read this tender's ACTUAL scope of work and decide whether it genuinely fits the company's "
+        "business line. Judge the REAL subject — do NOT be misled by a superficial keyword overlap that "
+        "does not reflect the actual scope (e.g. the word 'event' inside 'Security Information and Event "
+        "Management (SIEM)' is a cybersecurity system, NOT an events tender). If the tender clearly belongs "
+        "to a domain the company does not operate in, OR matches the out-of-scope list, set in_scope=false. "
+        'Add to JSON: "scope_fit": {"in_scope": true|false, "category": string|null (which in-scope service '
+        'line it fits, or null), "reason": string (<=25 words, why it fits or not)}'
+    )
+
+
+def _openai_fields(text: str, needed: list[str], scope_ctx: dict | None = None) -> dict:
     if not settings.openai_api_key or not text:
         return {}
     try:
@@ -66,14 +92,15 @@ def _openai_fields(text: str, needed: list[str]) -> dict:
             '  "documents_required": [string] (documents / certificates / profiles the BIDDER must submit — e.g. GST, PAN, ISO 9001, similar-work completion certificate, bank solvency, EMD DD, audited balance sheets),\n'
             '  "bidding_capacity": string|null (any bidding-capacity / available-capacity requirement the RFP states — include the formula or figure if given),\n'
             '  "multiplier_factor": string|null (any multiplier the RFP applies to past completed-work value when valuing experience, e.g. "2x for similar works"),\n'
-            '  "page_refs": {"estimated_value_cr":"p2 of RFP","emd_amount_cr":"p2 of RFP","tender_type":"...","scope_summary":"...","eligibility_conditions":"...","key_deliverables":"...","procurement_model":"...","commercial_model":"...","authority_contact":"...","project_duration":"...","location_of_execution":"...","unusual_clauses":"...","penalty_clauses":"..."} (the page AND document where each IMPORTANT field is stated — format "p<N> of <DOC>" e.g. "p2 of RFP", "p5 of BOQ"; OMIT any you cannot locate — never guess),\n'
+            '  "page_refs": {"estimated_value_cr":"p2 of Tendernotice_1.pdf","emd_amount_cr":"p2 of Tendernotice_1.pdf","tender_type":"...","scope_summary":"...","eligibility_conditions":"...","key_deliverables":"...","procurement_model":"...","commercial_model":"...","authority_contact":"...","project_duration":"...","location_of_execution":"...","unusual_clauses":"...","penalty_clauses":"..."} (page AND EXACT document filename for each IMPORTANT field — format "p<N> of <exact filename from the DOCUMENT markers>" e.g. "p2 of Tendernotice_1.pdf", "p5 of BOQ_75162.xls"; NEVER a generic word like "RFP" and NEVER a bare "p2"; OMIT any you cannot locate — never guess),\n'
             '  "extras": {"compliance_complexity": "Low"|"Medium"|"High" (ALWAYS pick one, based on the licences/registrations/certifications the RFP demands), "pricing_feasibility": string|null, "epc_estimate_cr": number|null, "procurement_basis": string|null (2-4 lines: WHY this procurement model fits and how THIS tender relates to it — e.g. for EPC, how the scope is engineer-procure-construct), "payment_terms": string|null (HOW the authority releases payment to the bidder — milestone schedule with % AND Rs amounts where stated, e.g. "10% on mobilisation (Rs.X), 40% at 50% progress (Rs.Y), ...")},\n'
-            '  "sow_page_refs": string (page/section references for the scope of work, e.g. "p.34, p.37"),\n'
+            '  "sow_page_refs": string (scope-of-work page refs WITH the exact filename, e.g. "Tendernotice_1.pdf p.34, p.37"),\n'
             '  "pre_bid_date": "YYYY-MM-DD"|null (the pre-bid meeting DATE if any pre-bid meeting/place is mentioned),\n'
             '  "key_dates": [{"label","value","document","page"}],\n'
             '  "all_fields": [{"label","value","document","page"}]\n'
-            "Numbers (turnover/networth) in ₹ crore. Dates as YYYY-MM-DD.\n\n"
-            f"Document text:\n---\n{text[:settings.extract_text_limit]}\n---"
+            "Numbers (turnover/networth) in ₹ crore. Dates as YYYY-MM-DD."
+            + _scope_block(scope_ctx)
+            + f"\n\nDocument text:\n---\n{text[:settings.extract_text_limit]}\n---"
         )
         model = settings.openai_extract_model
         kwargs = dict(
@@ -119,13 +146,13 @@ def vision_ocr(png_bytes: bytes) -> str:
         return ""
 
 
-def hybrid_extract(text: str) -> tuple[dict, dict]:
+def hybrid_extract(text: str, scope_ctx: dict | None = None) -> tuple[dict, dict]:
     py = python_fields(text)
     py_filled = [k for k, v in py.items() if v not in (None, "", [], {})]
     missing_regex = [k for k in _REGEXABLE if k not in py_filled]
 
-    needed = _SEMANTIC + missing_regex
-    llm = _openai_fields(text, needed)
+    needed = _SEMANTIC + missing_regex + ["scope_fit"]
+    llm = _openai_fields(text, needed, scope_ctx)
 
     # Python wins on the fields it confidently extracted; LLM fills the rest.
     merged = {**llm, **{k: v for k, v in py.items() if v not in (None, "", [], {})}}

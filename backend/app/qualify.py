@@ -106,9 +106,22 @@ def qualify(row: dict, profile: Profile) -> dict:
     text = " ".join(str(row.get(k) or "") for k in ("title", "scope_summary"))
     sc = scope_check(text, profile)
 
-    # 1) Exclusion gate — out of scope, OR a strong exclusion keyword in the title.
-    if sc["excluded"] or title_excluded(str(row.get("title") or ""), profile):
-        reason = sc["exclude_reason"] or "Out of scope — exclusion keyword in the tender title"
+    # The LLM read the FULL tender against THIS customer's profile (scope_description + keywords
+    # from Supabase) and judged genuine fit — this is the primary scope decision, because literal
+    # keyword matching produces false positives (e.g. 'event' inside 'SIEM'). The keyword checks
+    # below are a deterministic backstop that also honours explicit user/profile exclusions.
+    _fit = (row.get("extracted_data") or {}).get("scope_fit") or {}
+    _llm_in_scope = _fit.get("in_scope")
+    _title_exc = title_excluded(str(row.get("title") or ""), profile)
+
+    # 1) Exclusion gate — LLM says out of scope, OR a keyword/title exclusion fired.
+    if _llm_in_scope is False or sc["excluded"] or _title_exc:
+        if _title_exc:
+            reason = "Out of scope — exclusion keyword in the tender title"
+        elif _llm_in_scope is False:
+            reason = _fit.get("reason") or "Out of scope — does not fit the company's business line"
+        else:
+            reason = sc["exclude_reason"] or "Out of scope — no service-line anchor"
         return {
             "verdict": "EXCLUDED", "competitiveness_score": 0,
             "score_breakdown": {"scope": 0, "dates": 0, "financial": 0, "docs": 0},
@@ -117,6 +130,10 @@ def qualify(row: dict, profile: Profile) -> dict:
             "reasons_rejected": [reason], "reasons_qualified": [],
             "gaps_to_address": [], "eligibility_check": [], "eligibility_flags": [],
         }
+
+    # The LLM may recognise a genuine fit the literal keyword list missed.
+    if _llm_in_scope is True:
+        sc["in_scope"] = True
 
     value_cr = _to_cr(row.get("estimated_value"))
     emd_cr = _to_cr(row.get("emd_amount"))
