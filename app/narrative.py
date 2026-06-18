@@ -21,7 +21,11 @@ _SYSTEM = (
     "client's stated preferences, risk factors and rejection guidance — when phrasing the "
     "recommendation, key insight and risk; flag rejection-worthy risks clearly. "
     "Base EVERY recommendation strictly on CS Direkt's documented capabilities, financials and past "
-    "projects — never assume capability beyond what the profile/portfolio shows. For PARTIAL/INELIGIBLE "
+    "projects — never assume capability beyond what the profile/portfolio shows. Use cs_direkt_profile "
+    "(scope_description, in/out-of-scope keywords, turnover, net worth, bank solvency, EMD/PBG capacity, "
+    "legal items) to judge fit: compare the tender's stated requirements against these ACTUAL figures and "
+    "CITE them — e.g. 'needs Rs.27.66 Cr turnover vs CS Direkt's Rs.103.79 Cr 3-yr avg → met', or 'scope is "
+    "civil construction, which is in CS Direkt's out-of-scope keywords → no fit'. For PARTIAL/INELIGIBLE "
     "tenders, state the tender type, the specific gap that blocks eligibility, and exactly what CS Direkt "
     "would need to fulfil to qualify. "
     "Be SPECIFIC and analytical — never generic boilerplate; every risk, compliance note and recommendation "
@@ -62,6 +66,23 @@ def generate_narrative(row: dict, profile=None) -> dict:
         "emd": row.get("emd_amount"),
         "risk_level": row.get("risk_level"),
         "cs_direkt_track_record": track,
+        # Full CS Direkt profile so Claude can compare the tender's requirements against the
+        # company's ACTUAL scope, keywords, financials and legal standing (cite exact figures).
+        "cs_direkt_profile": ({
+            "scope_description": getattr(profile, "scope_description", "") or "",
+            "in_scope_keywords": (getattr(profile, "include_keywords", None) or [])[:80],
+            "out_of_scope_keywords": (getattr(profile, "exclude_keywords", None) or [])[:40],
+            "turnover_3yr_avg_cr": getattr(profile, "turnover_3yr_avg_cr", None),
+            "turnover_last_year_cr": getattr(profile, "turnover_last_year_cr", None),
+            "net_worth_latest_cr": getattr(profile, "net_worth_latest_cr", None),
+            "net_worth_3yr_avg_cr": getattr(profile, "net_worth_3yr_avg_cr", None),
+            "bank_solvency_cr": getattr(profile, "bank_solvency_cr", None),
+            "emd_capacity_cr": getattr(profile, "emd_threshold_cr", None),
+            "pbg_capacity_pct": getattr(profile, "pbg_threshold_pct", None),
+            "min_tender_value_cr": getattr(profile, "min_tender_value_cr", None),
+            "max_tender_value_cr": getattr(profile, "max_tender_value_cr", None),
+            "legal_items": getattr(profile, "legal_items", None) or [],
+        } if profile else {}),
         "client_analysis_instructions": (getattr(profile, "analysis_instructions", "") if profile else "") or "",
         "client_auto_reject_risks": (getattr(profile, "auto_reject_risks", "") if profile else "") or "",
         "eligibility_conditions": (row.get("eligibility_conditions") or [])[:8],

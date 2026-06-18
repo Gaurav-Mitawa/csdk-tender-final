@@ -50,6 +50,7 @@ class Profile:
     similar_works_count: int = 27           # CS Direkt portfolio (credentials doc)
     similar_work_pct: float = 40.0          # tender's "one similar work" tier = % of value
     scope_keywords: dict = field(default_factory=lambda: dict(_DEFAULT_SCOPE))
+    scope_description: str = ""   # "what the company does" — fed to Claude for fit analysis
     include_keywords: list = field(default_factory=list)
     exclude_keywords: list = field(default_factory=lambda: list(_DEFAULT_EXCLUDE))
     portfolio: list = field(default_factory=list)   # past projects (experience evidence)
@@ -120,6 +121,7 @@ def load_profile(user_id: str | None = None) -> Profile:
                 similar_works_count=int(_f(r.get("similar_works_count"), 27)),
                 similar_work_pct=_f(r.get("similar_work_pct"), 40.0),
                 scope_keywords=r.get("scope_keywords") or dict(_DEFAULT_SCOPE),
+                scope_description=r.get("scope_description") or "",
                 include_keywords=r.get("include_keywords") or [],
                 exclude_keywords=r.get("exclude_keywords") or list(_DEFAULT_EXCLUDE),
                 turnover_last_year_cr=_f(r.get("turnover_last_year_cr"), 104.27),
