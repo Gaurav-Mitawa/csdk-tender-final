@@ -103,6 +103,7 @@ def qualify(row: dict, profile: Profile) -> dict:
     # Match scope on the FOCUSED signal (title + LLM scope summary), not the full
     # raw_text — a 60-page doc mentioning "event"/"museum" in passing caused false
     # category matches and over-generous verdicts.
+    co = (getattr(profile, "company_name", None) or "the bidder")   # white-label (from profile)
     text = " ".join(str(row.get(k) or "") for k in ("title", "scope_summary"))
     sc = scope_check(text, profile)
 
@@ -176,7 +177,7 @@ def qualify(row: dict, profile: Profile) -> dict:
         reasons_r.append(f"Value ₹{value_cr:.2f} Cr above the ₹{profile.max_tender_value_cr} Cr ceiling")
     elif not sc["in_scope"]:
         verdict = "INELIGIBLE"
-        reasons_r.append("No CS Direkt service-line match in the documents")
+        reasons_r.append(f"No {co} service-line match in the documents")
     elif not value_cr and not sc["matched_categories"]:
         verdict = "INELIGIBLE"
         reasons_r.append("Value not disclosed and no clear scope match")
@@ -219,9 +220,9 @@ def qualify(row: dict, profile: Profile) -> dict:
 
     fin_status = "[!]" if fin_flags else "[OK]"  # highlighted when any band tripped
     if req_turnover:
-        fin_detail = f"Turnover required ≈ ₹{req_turnover} Cr — CS Direkt 3-yr avg ₹{profile.turnover_3yr_avg_cr} Cr → {fin_status}."
+        fin_detail = f"Turnover required ≈ ₹{req_turnover} Cr — {co} 3-yr avg ₹{profile.turnover_3yr_avg_cr} Cr → {fin_status}."
     else:
-        fin_detail = f"No turnover threshold extracted; CS Direkt 3-yr avg ₹{profile.turnover_3yr_avg_cr} Cr."
+        fin_detail = f"No turnover threshold extracted; {co} 3-yr avg ₹{profile.turnover_3yr_avg_cr} Cr."
     if req_networth:
         fin_detail += f" Net worth required ≈ ₹{req_networth} Cr vs ₹{profile.net_worth_latest_cr} Cr."
     n_clauses = len(row.get("eligibility_conditions") or [])
@@ -247,16 +248,16 @@ def qualify(row: dict, profile: Profile) -> dict:
         _req_sim = None
     if _req_sim is None:
         exp_status = "[?]"
-        exp_detail = f"Similar-work tier not computable (value undisclosed); CS Direkt's largest matching work: {_proj}, {_cnt} similar projects."
+        exp_detail = f"Similar-work tier not computable (value undisclosed); {co}'s largest matching work: {_proj}, {_cnt} similar projects."
     elif _largest >= _req_sim:
         exp_status = "[OK]"
-        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}); CS Direkt's largest matching work {_proj} ≥ requirement → [OK] ({_cnt} similar projects)."
+        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}); {co}'s largest matching work {_proj} ≥ requirement → [OK] ({_cnt} similar projects)."
     elif _largest >= _req_sim * 0.85:
         exp_status = "[!]"
-        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}); close to CS Direkt's largest matching work {_proj} — confirm a qualifying project."
+        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}); close to {co}'s largest matching work {_proj} — confirm a qualifying project."
     else:
         exp_status = "[!]"
-        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}) — exceeds CS Direkt's largest matching work {_proj}; bid via JV/consortium."
+        exp_detail = f"Requires one similar work ≈ ₹{_req_sim} Cr ({_basis}) — exceeds {co}'s largest matching work {_proj}; bid via JV/consortium."
 
     eligibility_check = [
         {"dimension": "Legal", "status": "[LIKELY OK]",

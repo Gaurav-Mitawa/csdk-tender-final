@@ -46,14 +46,13 @@
   {% else %}
     <p>
       The scanner matched a watched keyword but on closer inspection the core
-      scope falls outside CSDirekt's service profile (museum AV / immersive
-      cultural media / heritage projection / exhibition design).
+      scope falls outside {{ company_name }}'s service profile.
     </p>
   {% endif %}
 
-  <h4 class="sec">5. Eligibility Assessment — What Would Make CS Direkt Eligible</h4>
+  <h4 class="sec">5. Eligibility Assessment — What Would Make {{ company_name }} Eligible</h4>
   {% if t.gaps %}
-    <p><strong>Gaps that currently make CS Direkt ineligible:</strong></p>
+    <p><strong>Gaps that currently make {{ company_name }} ineligible:</strong></p>
     <ul>{% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
   {% endif %}
   {% if t.requirements %}
@@ -61,7 +60,7 @@
     <ul>{% for r in t.requirements %}<li>{{ r }}</li>{% endfor %}</ul>
   {% endif %}
   {% if not t.gaps and not t.requirements %}
-    <p class="narrative">This tender falls outside CS Direkt's core service profile — there is no realistic path to eligibility based on the capabilities in CS Direkt's documents.</p>
+    <p class="narrative">This tender falls outside {{ company_name }}'s core service profile — there is no realistic path to eligibility based on the capabilities in {{ company_name }}'s documents.</p>
   {% endif %}
 
   {% if t.pre_bid_queries %}

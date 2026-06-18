@@ -98,7 +98,7 @@
         {% if t.unusual_clauses %}
           <ul>{% for c in t.unusual_clauses %}<li>{{ c }}</li>{% endfor %}</ul>
           {% if t.page_refs.unusual_clauses %}<span class="ref">[{{ t.page_refs.unusual_clauses }}]</span>{% endif %}
-        {% else %}<em>No unusual or risky clauses identified in the documents — no material risk flagged for CS Direkt on this tender.</em>{% endif %}
+        {% else %}<em>No unusual or risky clauses identified in the documents — no material risk flagged for {{ company_name }} on this tender.</em>{% endif %}
       </td>
     </tr>
     <tr><th>Penalty Clauses</th>
@@ -129,7 +129,7 @@
     </tr>
   </table>
 
-  <h4 class="sec">5. Eligibility Check (CSDirekt Rubric)</h4>
+  <h4 class="sec">5. Eligibility Check ({{ company_name }} Rubric)</h4>
   {% if t.eligibility_rows %}
   <table class="dim-table">
     <thead>
@@ -169,7 +169,7 @@
   {% if t.gaps %}
     <ul>{% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
   {% else %}
-    <p>None identified — CS Direkt meets the tender's stated eligibility on the available data.</p>
+    <p>None identified — {{ company_name }} meets the tender's stated eligibility on the available data.</p>
   {% endif %}
 
   <h4 class="sec">7. Execution Readiness — Pre-bid Queries</h4>

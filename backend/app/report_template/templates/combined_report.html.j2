@@ -6,10 +6,12 @@
 </head>
 <body class="combined-doc r1 r2">
   <span class="report-date-string">{{ generated_on }}</span>
+  <span class="brand-head-string">{{ company_name }} Tender Intelligence Report</span>
+  <span class="brand-foot-string">{{ company_name }}</span>
 
   <header class="combined-master-header">
     <h1 class="combined-master-title">TENDER INTELLIGENCE REPORT</h1>
-    <p class="combined-master-subtitle">CSDirekt Tender Search &amp; Eligibility Analysis</p>
+    <p class="combined-master-subtitle">{{ company_name }} Tender Search &amp; Eligibility Analysis</p>
     <p class="combined-master-meta">
       <strong>Generated On:</strong> {{ generated_on }}
       &nbsp;·&nbsp;
@@ -94,7 +96,7 @@
 
   {% if not section_a and not section_b and not section_c %}
     <p class="r2-empty">
-      No tenders matched the CSDirekt eligibility filter this cycle. See the
+      No tenders matched the {{ company_name }} eligibility filter this cycle. See the
       Executive Summary above for the full audit trail.
     </p>
   {% endif %}
@@ -102,7 +104,7 @@
   {% if section_a %}
   <h2 class="section-heading">SECTION A · FULLY ELIGIBLE BENCHMARK TENDERS</h2>
   <p class="section-blurb">
-    These tenders pass every CSDirekt rubric dimension — scope alignment,
+    These tenders pass every {{ company_name }} rubric dimension — scope alignment,
     financial gate, dates, and document availability. Recommend prioritising
     these for the Bid &amp; Pricing committee.
   </p>
@@ -135,7 +137,7 @@
   <h2 class="section-heading">SECTION C · REJECTED TENDERS — DETAILED REASONING</h2>
   <p class="section-blurb">
     These tenders matched a keyword the scanner watches, but on closer read
-    do not fit CSDirekt's core service profile. Each entry below shows the
+    do not fit {{ company_name }}'s core service profile. Each entry below shows the
     specific disqualification triggers and the layperson business logic
     behind the rejection.
   </p>

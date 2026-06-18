@@ -24,8 +24,8 @@ _SYSTEM = (
     "projects — never assume capability beyond what the profile/portfolio shows. Use cs_direkt_profile "
     "(scope_description, in/out-of-scope keywords, turnover, net worth, bank solvency, EMD/PBG capacity, "
     "legal items) to judge fit: compare the tender's stated requirements against these ACTUAL figures and "
-    "CITE them — e.g. 'needs Rs.27.66 Cr turnover vs CS Direkt's Rs.103.79 Cr 3-yr avg → met', or 'scope is "
-    "civil construction, which is in CS Direkt's out-of-scope keywords → no fit'. For PARTIAL/INELIGIBLE "
+    "CITE them — e.g. 'needs Rs.X Cr turnover vs the company's Rs.Y Cr 3-yr avg (from the profile) → met', "
+    "or 'scope matches an out-of-scope keyword → no fit'. For PARTIAL/INELIGIBLE "
     "tenders, state the tender type, the specific gap that blocks eligibility, and exactly what CS Direkt "
     "would need to fulfil to qualify. "
     "Be SPECIFIC and analytical — never generic boilerplate; every risk, compliance note and recommendation "
@@ -110,7 +110,12 @@ def generate_narrative(row: dict, profile=None) -> dict:
             '  "pre_bid_queries": [{"priority": "Critical"|"Important", "clause_reference": string, "existing_requirement": string, "observation": string, "question": string, "strategic_objective": string, "expected_benefit": string}] (queries that could realistically make this tender achievable for CS Direkt — e.g. relax/clarify a hard eligibility bar; [] if no defensible query exists)\n'
             '}'
         )
+    # White-label: the prompt is authored with "CS Direkt" as the running example; swap in the
+    # actual customer's name (from their Supabase profile) so the narrative is product-generic.
+    company = (getattr(profile, "company_name", None) or "the bidding company").strip() if profile else "the bidding company"
     user = "Tender:\n" + json.dumps(meta, ensure_ascii=False, default=str) + "\n\nReturn ONLY this JSON:\n" + keys
+    system = _SYSTEM.replace("CS Direkt", company)
+    user = user.replace("CS Direkt", company)
     try:
         import anthropic
     except Exception:  # noqa: BLE001
@@ -126,7 +131,7 @@ def generate_narrative(row: dict, profile=None) -> dict:
                 model=settings.anthropic_model,
                 max_tokens=4000,   # enriched pre-bid queries (6 fields each) overflowed 1500 -> truncated/invalid JSON
                 temperature=0.2,
-                system=_SYSTEM,
+                system=system,
                 messages=[{"role": "user", "content": user}],
             )
             text = "".join(getattr(b, "text", "") for b in resp.content)

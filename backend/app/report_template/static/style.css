@@ -6,7 +6,7 @@
   size: A4 landscape;
   margin: 14mm 16mm 16mm 16mm;
   @top-left {
-    content: "CSDirekt Tender Intelligence Report  ·  " string(report-date);
+    content: string(brand-head) "  ·  " string(report-date);
     font-family: "Helvetica", "Arial", sans-serif;
     font-size: 8.5pt;
     color: #6B7280;
@@ -15,7 +15,7 @@
     content: "";
   }
   @bottom-left {
-    content: "CSDirekt · Crafting Immersive Experiences";
+    content: string(brand-foot);
     font-family: "Helvetica", sans-serif;
     font-size: 8pt;
     color: #6B7280;
@@ -44,6 +44,9 @@ body {
 }
 
 .report-date-string { string-set: report-date content(); display: none; }
+/* White-label running header/footer — set from the template ({{ company_name }}). */
+.brand-head-string { string-set: brand-head content(); display: none; }
+.brand-foot-string { string-set: brand-foot content(); display: none; }
 
 /* ─── Cover ─────────────────────────────────────────────── */
 .cover {

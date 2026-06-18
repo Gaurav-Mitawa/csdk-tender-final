@@ -371,9 +371,12 @@ def _build_context(run_id: str | None) -> dict:
                                  or _insight_fallback(t)),
     } for t in ordered]
 
+    _pctx = _profile_ctx()
+    company = (_pctx.get("company_name") or "").strip() or "Tender Intelligence"
     return {
-        "doc_title": "CSDirekt Tender Intelligence Report", "generated_on": date.today().isoformat(),
-        "cycle_id": cycle, "cost_footer": "", "profile": _profile_ctx(),
+        "doc_title": f"{company} Tender Intelligence Report", "generated_on": date.today().isoformat(),
+        "company_name": company,   # white-label: header/footer/section text use this (from the profile)
+        "cycle_id": cycle, "cost_footer": "", "profile": _pctx,
         "counts": {"total": len(tenders), "eligible": len(elig), "partial": len(part), "rejected": len(rej)},
         "exec_rows": exec_rows,
         "section_a": [_tctx(t) for t in elig], "section_b": [_tctx(t) for t in part], "section_c": [_rctx(t) for t in rej],
