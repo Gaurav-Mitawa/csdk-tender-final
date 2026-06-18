@@ -187,15 +187,10 @@ def _tctx(t):
         "gaps": _slist(t.get("gaps_to_address")), "pre_bid_queries": _prebid(t),
         "pricing_feasibility": _clean(ex.get("pricing_feasibility")) or _NA,
         "epc_estimate": f"Rs. {ex.get('epc_estimate_cr')} Cr" if ex.get("epc_estimate_cr") else _NA,
-        "source_docs": _docs(t), "input_coverage": "", "page_refs": {}, "data_conflicts": [],
+        "source_docs": _docs(t), "input_coverage": "", "page_refs": (ed.get("page_refs") or {}), "data_conflicts": [],
         "documents_required": _slist(t.get("documents_required")),
         "bidding_capacity": (_clean(t.get("bidding_capacity")) or _NA),
         "multiplier_factor": (_clean(t.get("multiplier_factor")) or _NA),
-        "raw_requirements": [
-            {"label": a.get("label", ""), "value": a.get("value", ""),
-             "page": (a.get("page") or a.get("document") or "—")}
-            for a in (ed.get("all_fields") or []) if isinstance(a, dict) and (a.get("label") or a.get("value"))
-        ][:30],
         "eligibility_flags": [
             {"field": (fl.get("field", "").replace("_", " ").title()), "required": fl.get("required"),
              "capacity": fl.get("capacity"), "over_pct": fl.get("over_pct"),

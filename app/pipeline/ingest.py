@@ -367,6 +367,7 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
         "extracted_data": {
             "all_fields": ex.get("all_fields"),
             "key_dates": ex.get("key_dates"),
+            "page_refs": ex.get("page_refs"),
             "extras": ex.get("extras"),
             "tender_type_confidence": ex.get("tender_type_confidence"),
             "tender_type_basis": ex.get("tender_type_basis"),
