@@ -186,23 +186,8 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                     store.emit(run_id, "info", f"Skipped (below ₹{prof.min_tender_value_cr} Cr floor): {(t.get('title') or '')[:40]}")
                     continue
                 if not reproc and store.tender_db_id(tk_uuid):
-                    # Already ingested. DON'T re-extract (that re-ran the LLM and flipped
-                    # verdicts run-to-run); instead re-tag it into THIS run so a chat 'find N'
-                    # or manual scan reports it — otherwise the end-of-cycle report (which
-                    # queries run_id) came back empty whenever the matches were already seen.
-                    _v = store.retag_run(tk_uuid, run_id)
-                    found += 1
-                    f_count += 1
-                    if _v in ("ELIGIBLE", "PARTIAL"):
-                        qualified += 1
-                    if _stop.is_set():
-                        stopped = True
-                        break
-                    _tick(found)
-                    if found >= cap:
-                        store.emit(run_id, "warn", "Reached the tender cap — stopping early.")
-                        break
-                    continue
+                    continue  # already processed in a previous run — skip, so each scan
+                    #            surfaces only genuinely NEW tenders (no repeats)
                 # Per-tender hard cap: run in a worker thread; if it exceeds the timeout,
                 # skip it and move on (the slow thread is abandoned, not awaited).
                 from concurrent.futures import ThreadPoolExecutor
