@@ -47,8 +47,7 @@
     <thead>
       <tr>
         <th class="col-ser">Sl. No</th>
-        <th class="col-tender">Tender Reference / Title</th>
-        <th class="col-prebid">Pre-bid Date</th>
+        <th class="col-tender">Tender Reference / Title &amp; Pre-bid Date</th>
         <th class="col-keyword">Matched Keyword</th>
         <th class="col-authority">Issuing Authority</th>
         <th class="col-value">Estimated Value</th>
@@ -63,8 +62,7 @@
           {% set ns.ser = ns.ser + 1 %}
           <tr>
             <td class="col-ser">{{ ns.ser }}</td>
-            <td class="col-tender">{{ row.title }}</td>
-            <td class="col-prebid">{{ row.pre_bid_date }}</td>
+            <td class="col-tender">{{ row.title }}<br><span class="ref">Pre-bid: {{ row.pre_bid_date }}</span></td>
             {% if loop.first %}
               <td class="col-keyword keyword-cell" rowspan="{{ rows|length }}">{{ keyword }}</td>
             {% endif %}

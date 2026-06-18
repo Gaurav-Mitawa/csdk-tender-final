@@ -19,7 +19,11 @@ _SYSTEM = (
     "projects (cs_direkt_track_record) BY NAME in narrative_fit / strategic_fit_basis. "
     "If client_analysis_instructions or client_auto_reject_risks is present, HONOUR them — the "
     "client's stated preferences, risk factors and rejection guidance — when phrasing the "
-    "recommendation, key insight and risk; flag rejection-worthy risks clearly. Return ONLY JSON."
+    "recommendation, key insight and risk; flag rejection-worthy risks clearly. "
+    "Base EVERY recommendation strictly on CS Direkt's documented capabilities, financials and past "
+    "projects — never assume capability beyond what the profile/portfolio shows. For PARTIAL/INELIGIBLE "
+    "tenders, state the tender type, the specific gap that blocks eligibility, and exactly what CS Direkt "
+    "would need to fulfil to qualify. Return ONLY JSON."
 )
 
 

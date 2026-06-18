@@ -25,6 +25,7 @@ _SEMANTIC = [
     "sow_page_refs", "procurement_model", "commercial_model",
     "tender_type_confidence", "tender_type_basis", "commercial_basis",
     "similar_work_pct", "similar_work_required_cr",
+    "documents_required", "bidding_capacity", "multiplier_factor",
     "extras", "key_dates", "all_fields",
 ]
 
@@ -54,6 +55,9 @@ def _openai_fields(text: str, needed: list[str]) -> dict:
             '  "estimated_value_cr": number|null (TOTAL estimated tender / project / contract value in ₹ crore — the headline cost, NOT EMD or turnover),\n'
             '  "similar_work_pct": number|null (the % of estimated cost the RFP demands for ONE similar completed work, e.g. 30/40/60),\n'
             '  "similar_work_required_cr": number|null (the ABSOLUTE ₹ crore value of one similar work, if the RFP states an amount instead of a %),\n'
+            '  "documents_required": [string] (documents / certificates / profiles the BIDDER must submit — e.g. GST, PAN, ISO 9001, similar-work completion certificate, bank solvency, EMD DD, audited balance sheets),\n'
+            '  "bidding_capacity": string|null (any bidding-capacity / available-capacity requirement the RFP states — include the formula or figure if given),\n'
+            '  "multiplier_factor": string|null (any multiplier the RFP applies to past completed-work value when valuing experience, e.g. "2x for similar works"),\n'
             '  "extras": {"compliance_complexity": string|null, "pricing_feasibility": string|null, "epc_estimate_cr": number|null},\n'
             '  "key_dates": [{"label","value","document","page"}],\n'
             '  "all_fields": [{"label","value","document","page"}]\n'

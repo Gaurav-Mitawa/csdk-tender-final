@@ -157,6 +157,9 @@ def _tctx(t):
         "pricing_feasibility": _clean(ex.get("pricing_feasibility")) or "—",
         "epc_estimate": f"Rs. {ex.get('epc_estimate_cr')} Cr" if ex.get("epc_estimate_cr") else "—",
         "source_docs": _docs(t), "input_coverage": "", "page_refs": {}, "data_conflicts": [],
+        "documents_required": _slist(t.get("documents_required")),
+        "bidding_capacity": (_clean(t.get("bidding_capacity")) or "—"),
+        "multiplier_factor": (_clean(t.get("multiplier_factor")) or "—"),
         "eligibility_flags": [
             {"field": (fl.get("field", "").replace("_", " ").title()), "required": fl.get("required"),
              "capacity": fl.get("capacity"), "over_pct": fl.get("over_pct"),
