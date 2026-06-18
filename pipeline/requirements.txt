@@ -1,0 +1,35 @@
+# === HTTP + reliability ===
+requests>=2.31
+tenacity>=8.2            # exponential backoff for the 429-heavy TenderKart API
+python-dateutil>=2.9
+python-dotenv>=1.0
+
+# === PDF (born-digital: text layer present) ===
+PyMuPDF>=1.24            # primary text/layout extraction
+pdfplumber>=0.11         # tables / BOQ extraction
+
+# === PDF (scanned images): OCR fallback ===
+paddleocr>=2.7           # accuracy-first OCR (chosen over Tesseract)
+paddlepaddle>=2.6        # PaddleOCR backend (CPU build)
+pdf2image>=1.17          # rasterize PDF pages for OCR (needs system: poppler)
+Pillow>=10.0
+
+# === HTML ===
+beautifulsoup4>=4.12
+lxml>=5.0
+markdownify>=0.13        # HTML -> markdown
+
+# === Excel ===
+xlrd>=2.0                # legacy .xls
+openpyxl>=3.1            # .xlsx
+
+# === Word ===
+python-docx>=1.1         # .docx
+# NOTE: legacy .doc (binary Word) is NOT pip-installable — handled via system
+#       LibreOffice headless: `soffice --headless --convert-to docx <file>`
+
+# === LLM structuring (optional layer) ===
+groq>=0.11               # field extraction + OCR cleanup
+
+# === Output schema validation ===
+pydantic>=2.7

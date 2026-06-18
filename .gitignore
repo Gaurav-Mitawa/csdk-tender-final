@@ -1,19 +1,34 @@
-# secrets — NEVER commit
-.env
-.env.local
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
 
-# virtualenvs
+# Secrets / env (NEVER commit) — keep only the .example template
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
 .venv/
 venv/
-env/
+.mypy_cache/
+.pytest_cache/
 
-# python
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-
-# generated reports / scratch
-*.pdf
+# Pipeline data & outputs (regenerated)
+pipeline/data/
+pipeline/output/
+pipeline/cache/
 *.log
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local deploy secrets — never commit
+DEPLOY_ENV_VARS.txt
