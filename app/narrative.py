@@ -122,7 +122,7 @@ def generate_narrative(row: dict, profile=None) -> dict:
         try:
             resp = client.messages.create(
                 model=settings.anthropic_model,
-                max_tokens=1500,
+                max_tokens=4000,   # enriched pre-bid queries (6 fields each) overflowed 1500 -> truncated/invalid JSON
                 temperature=0.2,
                 system=_SYSTEM,
                 messages=[{"role": "user", "content": user}],
