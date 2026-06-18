@@ -184,6 +184,21 @@ def _elig_rows(t):
     return out
 
 
+def _gaps_fallback(t) -> list:
+    """For a non-eligible tender, never show 'None' in section 6 — a PARTIAL/INELIGIBLE
+    tender HAS a gap (often a financial-margin flag or a rejection reason that lives outside
+    gaps_to_address). Derive the gap list from those so the report always states WHY."""
+    out = []
+    for r in (t.get("reasons_rejected") or []):
+        if _clean(r):
+            out.append(str(r))
+    for fl in (t.get("eligibility_flags") or []):
+        fld = (fl.get("field") or "").replace("_", " ").title()
+        out.append(f"{fld}: required Rs.{fl.get('required')} Cr vs capacity Rs.{fl.get('capacity')} Cr "
+                   "— close via JV/consortium or by confirming a qualifying credential before bidding.")
+    return out
+
+
 def _prebid(t):
     """Rich pre-bid query cards (consultant style), Critical first."""
     out = []
@@ -204,6 +219,23 @@ def _prebid(t):
         elif _clean(q):
             out.append({"priority": "Important", "clause_reference": "—", "existing_requirement": "—",
                         "observation": "", "question": str(q), "strategic_objective": "", "expected_benefit": ""})
+    if not out:
+        # Never leave section 7 blank — fall back to standard, professionally-defensible
+        # queries a real bidder would always raise (the narrative LLM may have returned none).
+        out = [
+            {"priority": "Important", "clause_reference": "Eligibility / Pre-Qualification",
+             "existing_requirement": "As stated in the RFP eligibility criteria",
+             "observation": "Single-entity credentials may not fully meet every criterion.",
+             "question": "Will the authority accept a JV / consortium (pooling the members' technical and financial eligibility) for this tender?",
+             "strategic_objective": "Open a compliant route where a single-entity credential falls short.",
+             "expected_benefit": "Broader eligibility without diluting delivery capability."},
+            {"priority": "Important", "clause_reference": "Commercial / BOQ",
+             "existing_requirement": "Priced BOQ / detailed specifications",
+             "observation": "Final BOQ / value may not yet be public.",
+             "question": "When will the detailed BOQ and final technical specifications be released to prospective bidders?",
+             "strategic_objective": "Enable accurate costing and a firm go / no-go decision.",
+             "expected_benefit": "Removes the biggest pricing uncertainty before submission."},
+        ]
     out.sort(key=lambda x: 0 if str(x.get("priority", "")).lower().startswith("crit") else 1)
     return out
 
@@ -260,7 +292,8 @@ def _tctx(t):
         "risk_level": risk, "risk_class": RISKCLASS.get(risk.lower(), "medium"),
         "risk_layperson_explanation": t.get("risk_layperson_explanation") or "",
         "eligibility_rows": _elig_rows(t), "eligibility_conditions": _slist(t.get("eligibility_conditions")),
-        "gaps": _slist(t.get("gaps_to_address")), "pre_bid_queries": _prebid(t),
+        "gaps": _slist(t.get("gaps_to_address")) or (_gaps_fallback(t) if v != "ELIGIBLE" else []),
+        "pre_bid_queries": _prebid(t),
         "pricing_feasibility": _clean(ex.get("pricing_feasibility")) or _NA,
         "epc_estimate": f"Rs. {ex.get('epc_estimate_cr')} Cr" if ex.get("epc_estimate_cr") else _NA,
         "source_docs": _docs(t), "input_coverage": "", "data_conflicts": [],
@@ -291,7 +324,7 @@ def _rctx(t):
                                       for d in (t.get("disqualification_triggers") or []) if isinstance(d, dict)],
         "business_logic_explanation": t.get("business_logic_explanation") or "",
         "reasons": _slist(t.get("reasons_rejected")),
-        "gaps": _slist(t.get("gaps_to_address")),
+        "gaps": _slist(t.get("gaps_to_address")) or _gaps_fallback(t),
         "requirements": _slist(t.get("eligibility_conditions")),
         "pre_bid_queries": _prebid(t),
     }
