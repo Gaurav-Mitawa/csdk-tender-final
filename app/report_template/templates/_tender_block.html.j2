@@ -162,10 +162,13 @@
   {% endif %}
 
   <h4 class="sec">6. Gaps to Address</h4>
-  {% if t.gaps %}
-    <ul>{% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
+  {% if t.gaps or (t.verdict_class == 'partial' and t.partial_reasons) %}
+    <ul>
+      {% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}
+      {% if t.verdict_class == 'partial' %}{% for r in t.partial_reasons %}<li>{{ r }}</li>{% endfor %}{% endif %}
+    </ul>
   {% else %}
-    <p>None identified.</p>
+    <p>None identified — meets every rubric dimension.</p>
   {% endif %}
 
   <h4 class="sec">7. Execution Readiness — Pre-bid Queries</h4>

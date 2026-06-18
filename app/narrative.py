@@ -68,6 +68,7 @@ def generate_narrative(row: dict, profile=None) -> dict:
             '  "strategic_fit_basis": string (<=18 words),\n'
             '  "compliance_basis": string (<=40 words, name certs/licenses),\n'
             '  "risk_layperson_explanation": string (2-4 plain sentences),\n'
+            '  "gaps_to_address": [string] (for PARTIAL: each specific gap that keeps CS Direkt from being FULLY eligible AND how to close it — e.g. "Turnover bar Rs.27.66 Cr exceeds CS Direkt\'s single-entity reach; form a JV/consortium to meet it"; for ELIGIBLE: minor pre-award items or [] if none),\n'
             '  "pre_bid_queries": [{"sr_no": number, "page_ref": string, "clause_description": string, "question": string, "rationale": string}]\n'
             '}'
         )
