@@ -276,12 +276,17 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
         extracted.append({"doc": doc, "name": name, "content": content, "res": res, "url": url})
         hashes.append(res.content_hash)
 
+    def _docname(name: str) -> str:
+        # The scraped HTML detail page is the TenderKart listing, not a tender document —
+        # give it a clean label so page refs read "Tender Listing", never "details.html".
+        return "Tender Listing" if str(name or "").lower().endswith((".html", ".htm")) else name
+
     combined = []
     for e in extracted:
         pages = e["res"].pages or [e["res"].markdown]
         for pno, ptext in enumerate(pages, 1):
             if ptext and ptext.strip():
-                combined.append(f"\n\n=== DOCUMENT: {e['name']} | PAGE {pno} ===\n{ptext}")
+                combined.append(f"\n\n=== DOCUMENT: {_docname(e['name'])} | PAGE {pno} ===\n{ptext}")
     combined_md = "\n".join(combined).strip()
 
     # STEP 2 — only if the text copy came back essentially empty, call gpt-4o-mini vision.
@@ -292,7 +297,7 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
             vmd = vision_recover(e["name"], e["content"])
             if vmd:
                 vision_text[e["doc"].get("id")] = vmd
-                combined.append(f"\n\n=== DOCUMENT: {e['name']} (vision) ===\n{vmd}")
+                combined.append(f"\n\n=== DOCUMENT: {_docname(e['name'])} (vision) ===\n{vmd}")
         combined_md = "\n".join(combined).strip()
 
     artifacts, docs_meta = [], []
