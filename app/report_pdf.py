@@ -173,6 +173,8 @@ def _tctx(t):
         "tender_type": t.get("tender_type") or _NA, "tender_type_confidence": ed.get("tender_type_confidence") or "",
         "tender_type_reasoning": ed.get("tender_type_basis") or "",
         "procurement_model": t.get("procurement_model") or _NA,
+        "procurement_basis": _clean(ex.get("procurement_basis")) or "",
+        "payment_terms": (_clean(ex.get("payment_terms")) or _clean(t.get("commercial_model")) or _NA),
         "commercial_model": t.get("commercial_model") or _NA, "commercial_model_reasoning": ed.get("commercial_basis") or "",
         "fit_score_10": f"{(t.get('competitiveness_score') or 0)/10:.1f}",
         "strategic_fit_basis": t.get("strategic_fit_basis") or "", "recommendation_narrative": t.get("narrative_fit") or "",
@@ -279,23 +281,24 @@ def _build_context(run_id: str | None) -> dict:
     elig.sort(key=_bsort)
     part.sort(key=_bsort)
 
-    # exec-summary grouped by matched keyword
-    groups: dict[str, list] = {}
-    for t in tenders:
-        groups.setdefault(t.get("matched_keyword") or "(unmatched)", []).append({
-            "title": t.get("title") or "(untitled)", "authority": t.get("issuing_authority") or "—",
-            "estimated_value": _money(t.get("estimated_value")), "verdict": t.get("verdict"),
-            "verdict_class": VCLASS.get(t.get("verdict"), "rejected"),
-            "pre_bid_date": (_clean(t.get("pre_bid_date")) or "—"),
-            "key_business_insight": (t.get("key_business_insight") or t.get("excluded_reason") or "")[:200],
-        })
-    grouped = sorted(groups.items(), key=lambda kv: -max((VORDER.get("ELIGIBLE", 0) == VORDER.get(r["verdict"]) for r in kv[1]), default=0))
+    # Executive-summary rows in the SAME order as the detailed sections
+    # (eligible → partial → rejected, each QC → LC → L1) so the two match exactly.
+    ordered = elig + part + rej
+    exec_rows = [{
+        "title": t.get("title") or "(untitled)",
+        "closing_date": (_clean(t.get("closing_date")) or "—"),
+        "matched_keyword": t.get("matched_keyword") or "—",
+        "authority": t.get("issuing_authority") or "—",
+        "estimated_value": _money(t.get("estimated_value")), "verdict": t.get("verdict"),
+        "verdict_class": VCLASS.get(t.get("verdict"), "rejected"),
+        "key_business_insight": (t.get("key_business_insight") or t.get("excluded_reason") or "")[:200],
+    } for t in ordered]
 
     return {
         "doc_title": "CSDirekt Tender Intelligence Report", "generated_on": date.today().isoformat(),
         "cycle_id": cycle, "cost_footer": "", "profile": _profile_ctx(),
         "counts": {"total": len(tenders), "eligible": len(elig), "partial": len(part), "rejected": len(rej)},
-        "grouped": grouped,
+        "exec_rows": exec_rows,
         "section_a": [_tctx(t) for t in elig], "section_b": [_tctx(t) for t in part], "section_c": [_rctx(t) for t in rej],
         "detail_note": "Section C entries are retained for audit traceability. EXCLUDED (out-of-scope) tenders are omitted.",
         "show_appendix": True,

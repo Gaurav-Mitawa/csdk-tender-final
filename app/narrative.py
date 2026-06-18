@@ -29,7 +29,10 @@ _SYSTEM = (
     "(e.g. 'per RFP p.12'). Explain the procurement model's basis and the commercial structure's payment "
     "terms. For penalty clauses, state the penalty's cap/end period. Rate compliance complexity Low/Medium/"
     "High WITH the reason. For experience, refer to CS Direkt's completion certificates for similar work. If "
-    "the documents are too thin to support a real analysis, SAY SO explicitly instead of guessing. Return ONLY JSON."
+    "the documents are too thin to support a real analysis, SAY SO explicitly instead of guessing. "
+    "pre_bid_queries are the questions CS Direkt (the BIDDER) would raise to the tender AUTHORITY about "
+    "vague/ambiguous clauses that affect CS Direkt's eligibility, pricing or risk — each must cite the "
+    "clause/page it concerns. Return ONLY JSON."
 )
 
 
@@ -68,7 +71,7 @@ def generate_narrative(row: dict, profile=None) -> dict:
             '  "strategic_fit_basis": string (<=18 words),\n'
             '  "compliance_basis": string (<=40 words, name certs/licenses),\n'
             '  "risk_layperson_explanation": string (2-4 plain sentences),\n'
-            '  "gaps_to_address": [string] (for PARTIAL: each specific gap that keeps CS Direkt from being FULLY eligible AND how to close it — e.g. "Turnover bar Rs.27.66 Cr exceeds CS Direkt\'s single-entity reach; form a JV/consortium to meet it"; for ELIGIBLE: minor pre-award items or [] if none),\n'
+            '  "gaps_to_address": [string] (compare the TENDER\'s stated requirements against CS Direkt\'s ACTUAL financials, past projects and registrations; list each tender-spec requirement CS Direkt does NOT meet + how to close it — e.g. "RFP requires ISO 27001 (p5 of RFP); CS Direkt does not hold it — obtain before bidding" or "turnover bar Rs.27.66 Cr exceeds single-entity reach — bid via JV". For ELIGIBLE: minor pre-award items or [] if none),\n'
             '  "pre_bid_queries": [{"sr_no": number, "page_ref": string, "clause_description": string, "question": string, "rationale": string}]\n'
             '}'
         )

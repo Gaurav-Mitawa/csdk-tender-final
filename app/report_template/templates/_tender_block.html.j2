@@ -41,11 +41,15 @@
       </td>
     </tr>
     <tr><th>Bid Evaluation Type</th><td>{% if t.bid_eval == 'QC' %}Quality-cum-Cost (QC){% elif t.bid_eval == 'LC' %}Least-Cost (LC){% elif t.bid_eval == 'L1' %}Lowest-Price (L1){% else %}Not specified in documents{% endif %}</td></tr>
-    <tr><th>Procurement Model</th><td>{{ t.procurement_model }}{% if t.page_refs.procurement_model %} <span class="ref">[{{ t.page_refs.procurement_model }}]</span>{% endif %}</td></tr>
-    <tr><th>Commercial Structure (who pays whom)</th>
+    <tr><th>Procurement Model</th>
       <td>
-        {{ t.commercial_model }}{% if t.page_refs.commercial_model %} <span class="ref">[{{ t.page_refs.commercial_model }}]</span>{% endif %}
-        {% if t.commercial_model_reasoning %}<span class="basis-block"><em>Basis:</em> {{ t.commercial_model_reasoning }}</span>{% endif %}
+        {{ t.procurement_model }}{% if t.page_refs.procurement_model %} <span class="ref">[{{ t.page_refs.procurement_model }}]</span>{% endif %}
+        {% if t.procurement_basis %}<span class="basis-block"><em>Basis:</em> {{ t.procurement_basis }}</span>{% endif %}
+      </td>
+    </tr>
+    <tr><th>Payment Structure</th>
+      <td>
+        {{ t.payment_terms }}{% if t.page_refs.commercial_model %} <span class="ref">[{{ t.page_refs.commercial_model }}]</span>{% endif %}
       </td>
     </tr>
   </table>
@@ -162,13 +166,10 @@
   {% endif %}
 
   <h4 class="sec">6. Gaps to Address</h4>
-  {% if t.gaps or (t.verdict_class == 'partial' and t.partial_reasons) %}
-    <ul>
-      {% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}
-      {% if t.verdict_class == 'partial' %}{% for r in t.partial_reasons %}<li>{{ r }}</li>{% endfor %}{% endif %}
-    </ul>
+  {% if t.gaps %}
+    <ul>{% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
   {% else %}
-    <p>None identified — meets every rubric dimension.</p>
+    <p>None identified — CS Direkt meets the tender's stated eligibility on the available data.</p>
   {% endif %}
 
   <h4 class="sec">7. Execution Readiness — Pre-bid Queries</h4>
@@ -178,13 +179,7 @@
     <p>None.</p>
   {% endif %}
 
-  <h4 class="sec">8. L1 Tender Analysis (If Applicable)</h4>
-  <table class="kv-table">
-    <tr><th>Pricing Feasibility</th><td>{{ t.pricing_feasibility }}{% if t.page_refs.pricing_feasibility %} <span class="ref">[{{ t.page_refs.pricing_feasibility }}]</span>{% endif %}</td></tr>
-    <tr><th>Minimum Bid Estimate (EPC — expected project cost)</th><td>{{ t.epc_estimate }}{% if t.page_refs.epc_estimate_cr %} <span class="ref">[{{ t.page_refs.epc_estimate_cr }}]</span>{% endif %}</td></tr>
-  </table>
-
-  <h4 class="sec">9. Bid Requirements &amp; Capacity</h4>
+  <h4 class="sec">8. Bid Requirements &amp; Capacity</h4>
   <table class="kv-table">
     <tr><th>Documents / Profiles Required to Bid</th>
       <td>{% if t.documents_required %}<ul>{% for d in t.documents_required %}<li>{{ d }}</li>{% endfor %}</ul>{% else %}Not stated in the tender documents{% endif %}</td></tr>
@@ -193,7 +188,7 @@
   </table>
 
   {% if t.source_docs %}
-  <h4 class="sec">10. Source Documents</h4>
+  <h4 class="sec">9. Source Documents</h4>
   <ul>
     {% for d in t.source_docs %}
     <li>

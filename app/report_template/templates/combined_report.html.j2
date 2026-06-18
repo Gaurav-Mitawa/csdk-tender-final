@@ -42,12 +42,12 @@
     </div>
   </section>
 
-  {% if grouped %}
+  {% if exec_rows %}
   <table class="r1-table">
     <thead>
       <tr>
         <th class="col-ser">Sl. No</th>
-        <th class="col-tender">Tender Reference / Title &amp; Pre-bid Date</th>
+        <th class="col-tender">Tender Reference / Title &amp; Last Date</th>
         <th class="col-keyword">Matched Keyword</th>
         <th class="col-authority">Issuing Authority</th>
         <th class="col-value">Estimated Value</th>
@@ -56,28 +56,23 @@
       </tr>
     </thead>
     <tbody>
-      {% set ns = namespace(ser=0) %}
-      {% for keyword, rows in grouped %}
-        {% for row in rows %}
-          {% set ns.ser = ns.ser + 1 %}
-          <tr>
-            <td class="col-ser">{{ ns.ser }}</td>
-            <td class="col-tender">{{ row.title }}<br><span class="ref">Pre-bid: {{ row.pre_bid_date }}</span></td>
-            {% if loop.first %}
-              <td class="col-keyword keyword-cell" rowspan="{{ rows|length }}">{{ keyword }}</td>
-            {% endif %}
-            <td class="col-authority">{{ row.authority }}</td>
-            <td class="col-value">{{ row.estimated_value }}</td>
-            <td class="col-status verdict-{{ row.verdict_class }}">{{ row.verdict }}</td>
-            <td class="col-insight">{{ row.key_business_insight }}</td>
-          </tr>
-        {% endfor %}
+      {% for row in exec_rows %}
+      <tr>
+        <td class="col-ser">{{ loop.index }}</td>
+        <td class="col-tender">{{ row.title }}<br><span class="ref">Last date: {{ row.closing_date }}</span></td>
+        <td class="col-keyword">{{ row.matched_keyword }}</td>
+        <td class="col-authority">{{ row.authority }}</td>
+        <td class="col-value">{{ row.estimated_value }}</td>
+        <td class="col-status verdict-{{ row.verdict_class }}">{{ row.verdict }}</td>
+        <td class="col-insight">{{ row.key_business_insight }}</td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
 
   <p class="r1-note">
-    Note: Tenders with the same matched keyword are grouped under one keyword row.
+    Listed in the same order as the detailed report — fully eligible first (QC &rarr; LC &rarr; L1),
+    then partially eligible, then rejected.
   </p>
   {% else %}
     <p class="r1-empty">Tenderkart returned no tenders for any filter this cycle.</p>
