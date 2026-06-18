@@ -48,6 +48,19 @@ def _bid_eval(t: dict) -> str:
 _NA = "Not stated in the tender documents"
 
 
+def _insight_fallback(t: dict) -> str:
+    """Never leave the exec-summary insight blank — derive from verdict + score + reason
+    when Claude's key_business_insight is missing."""
+    v, s = t.get("verdict"), t.get("competitiveness_score")
+    rs = t.get("reasons_qualified") or t.get("reasons_rejected") or []
+    r = "; ".join(str(x) for x in rs[:2]) if isinstance(rs, list) else str(rs or "")
+    if v == "ELIGIBLE":
+        return f"PREMIUM FIT: {s}/100 — {r}" if r else f"Fully eligible ({s}/100)."
+    if v == "PARTIAL":
+        return f"PARTIAL FIT: {s}/100 — {r}" if r else f"Partially eligible ({s}/100)."
+    return f"DROP: {s}/100 — {r}" if r else f"Not eligible ({s}/100)."
+
+
 def _pages(v) -> str:
     """Format SoW page refs (a list of {page, document}, a JSON string, a number, or text) cleanly."""
     if not v or v in _EMPTY:
@@ -299,7 +312,8 @@ def _build_context(run_id: str | None) -> dict:
         "authority": t.get("issuing_authority") or "—",
         "estimated_value": _money(t.get("estimated_value")), "verdict": t.get("verdict"),
         "verdict_class": VCLASS.get(t.get("verdict"), "rejected"),
-        "key_business_insight": (t.get("key_business_insight") or t.get("excluded_reason") or "")[:200],
+        "key_business_insight": ((t.get("key_business_insight") or t.get("excluded_reason") or "")[:200]
+                                 or _insight_fallback(t)),
     } for t in ordered]
 
     return {

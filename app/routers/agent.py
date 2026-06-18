@@ -107,9 +107,11 @@ def _run_fresh_scan(keyword: str | None = None, limit: int | None = None) -> dic
             fids = [f["id"] for f in TenderKart().list_filters() if kw in (f.get("name") or "").lower()] or None
         except Exception as exc:  # noqa: BLE001
             log.warning("filter resolve failed: %s", exc)
-    # reprocess=True so the matched tenders are (re)processed and reported even if
-    # they were ingested by an earlier scan — the chat user wants a report on them.
-    run_id = ingest.start_run(triggered_by="chat", filter_ids=fids, limit=n, reprocess=True)
+    # reprocess=False: a tender is processed ONCE and its verdict is locked. Re-running
+    # must NOT re-extract the same tender (the LLM returns slightly different numbers each
+    # time, which flips ELIGIBLE/PARTIAL/REJECTED) — already-ingested tenders are skipped,
+    # so each scan only processes genuinely NEW tenders.
+    run_id = ingest.start_run(triggered_by="chat", filter_ids=fids, limit=n, reprocess=False)
     if run_id is None:
         return {"started": False, "message": "A scan is already running — its report will appear here when it finishes."}
     scope = f"'{keyword}'" if (keyword and fids) else "all sectors"

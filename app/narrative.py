@@ -86,19 +86,26 @@ def generate_narrative(row: dict, profile=None) -> dict:
     user = "Tender:\n" + json.dumps(meta, ensure_ascii=False, default=str) + "\n\nReturn ONLY this JSON:\n" + keys
     try:
         import anthropic
-
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        resp = client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=1500,
-            temperature=0.2,
-            system=_SYSTEM,
-            messages=[{"role": "user", "content": user}],
-        )
-        text = "".join(getattr(b, "text", "") for b in resp.content)
-        text = text[text.find("{"): text.rfind("}") + 1]
-        data = json.loads(text)
-        return {k: v for k, v in data.items() if v not in (None, "", [], {})}
-    except Exception as exc:  # noqa: BLE001
-        log.warning("generate_narrative failed: %s", exc)
+    except Exception:  # noqa: BLE001
         return {}
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    # Retry once: a transient Claude failure used to silently drop the whole narrative
+    # (e.g. key_business_insight came back blank on some tenders).
+    for attempt in (1, 2):
+        try:
+            resp = client.messages.create(
+                model=settings.anthropic_model,
+                max_tokens=1500,
+                temperature=0.2,
+                system=_SYSTEM,
+                messages=[{"role": "user", "content": user}],
+            )
+            text = "".join(getattr(b, "text", "") for b in resp.content)
+            text = text[text.find("{"): text.rfind("}") + 1]
+            data = json.loads(text)
+            out = {k: v for k, v in data.items() if v not in (None, "", [], {})}
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            log.warning("generate_narrative attempt %d failed: %s", attempt, exc)
+    return {}
