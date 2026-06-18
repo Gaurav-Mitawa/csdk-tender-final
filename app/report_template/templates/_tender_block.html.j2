@@ -31,6 +31,7 @@
     <tr><th>Estimated Value</th><td>{{ t.estimated_value }}{% if t.page_refs.estimated_value_cr %} <span class="ref">[{{ t.page_refs.estimated_value_cr }}]</span>{% endif %}</td></tr>
     <tr><th>EMD (Earnest Money Deposit)</th><td>{{ t.emd }}{% if t.page_refs.emd_amount_cr %} <span class="ref">[{{ t.page_refs.emd_amount_cr }}]</span>{% endif %}{% for c in t.data_conflicts %}{% if c.field == 'emd_amount' %}<br><span class="ref">⚠ source conflict — {% for s in c.sources %}{{ s.source }}: ₹{{ '%.0f'|format(s.value) }}{% if not loop.last %}; {% endif %}{% endfor %}. Displaying the higher figure; confirm at pre-bid.</span>{% endif %}{% endfor %}</td></tr>
     <tr><th>Published</th><td>{{ t.published }}</td></tr>
+    <tr><th>Pre-bid Meeting Date</th><td>{{ t.pre_bid_date }}</td></tr>
     <tr><th>Submission Deadline</th><td>{{ t.submission_deadline }}</td></tr>
     {% if t.technical_opening and t.technical_opening != '—' %}<tr><th>Technical Opening</th><td>{{ t.technical_opening }}</td></tr>{% endif %}
     <tr><th>Tender Type (selection method)</th>
@@ -39,6 +40,7 @@
         {% if t.tender_type_reasoning %}<span class="basis-block"><em>Basis:</em> {{ t.tender_type_reasoning }}</span>{% endif %}
       </td>
     </tr>
+    <tr><th>Bid Evaluation Type</th><td>{% if t.bid_eval == 'QC' %}Quality-cum-Cost (QC){% elif t.bid_eval == 'LC' %}Least-Cost (LC){% elif t.bid_eval == 'L1' %}Lowest-Price (L1){% else %}Not specified in documents{% endif %}</td></tr>
     <tr><th>Procurement Model</th><td>{{ t.procurement_model }}{% if t.page_refs.procurement_model %} <span class="ref">[{{ t.page_refs.procurement_model }}]</span>{% endif %}</td></tr>
     <tr><th>Commercial Structure (who pays whom)</th>
       <td>
@@ -92,7 +94,7 @@
         {% if t.unusual_clauses %}
           <ul>{% for c in t.unusual_clauses %}<li>{{ c }}</li>{% endfor %}</ul>
           {% if t.page_refs.unusual_clauses %}<span class="ref">[{{ t.page_refs.unusual_clauses }}]</span>{% endif %}
-        {% else %}—{% endif %}
+        {% else %}<em>No unusual or risky clauses identified in the documents — no material risk flagged for CS Direkt on this tender.</em>{% endif %}
       </td>
     </tr>
     <tr><th>Penalty Clauses</th>
@@ -100,7 +102,7 @@
         {% if t.penalty_clauses %}
           <ul>{% for c in t.penalty_clauses %}<li>{{ c }}</li>{% endfor %}</ul>
           {% if t.page_refs.penalty_clauses %}<span class="ref">[{{ t.page_refs.penalty_clauses }}]</span>{% endif %}
-        {% else %}—{% endif %}
+        {% else %}<em>No penalty clauses identified in the documents.</em>{% endif %}
       </td>
     </tr>
     <tr><th>Compliance Complexity</th>

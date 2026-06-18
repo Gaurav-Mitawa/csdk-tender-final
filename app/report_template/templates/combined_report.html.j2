@@ -48,6 +48,7 @@
       <tr>
         <th class="col-ser">Sl. No</th>
         <th class="col-tender">Tender Reference / Title</th>
+        <th class="col-prebid">Pre-bid Date</th>
         <th class="col-keyword">Matched Keyword</th>
         <th class="col-authority">Issuing Authority</th>
         <th class="col-value">Estimated Value</th>
@@ -63,6 +64,7 @@
           <tr>
             <td class="col-ser">{{ ns.ser }}</td>
             <td class="col-tender">{{ row.title }}</td>
+            <td class="col-prebid">{{ row.pre_bid_date }}</td>
             {% if loop.first %}
               <td class="col-keyword keyword-cell" rowspan="{{ rows|length }}">{{ keyword }}</td>
             {% endif %}
@@ -83,7 +85,6 @@
     <p class="r1-empty">Tenderkart returned no tenders for any filter this cycle.</p>
   {% endif %}
 
-  {% if profile %}{% include '_profile.html.j2' %}{% endif %}
 
   <div class="page-break"></div>
 

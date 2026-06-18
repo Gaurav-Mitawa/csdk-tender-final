@@ -11,7 +11,9 @@
     <tr><th>Portal Source</th><td>{{ t.portal }}</td></tr>
     <tr><th>Tender Reference Number</th><td>{{ t.reference_number }}</td></tr>
     <tr><th>Estimated Value</th><td>{{ t.estimated_value }}</td></tr>
+    <tr><th>Pre-bid Meeting Date</th><td>{{ t.pre_bid_date }}</td></tr>
     <tr><th>Submission Date</th><td>{{ t.closing_date }}</td></tr>
+    <tr><th>Tender Type</th><td>{{ t.tender_type }}{% if t.bid_eval == 'QC' %} — Quality-cum-Cost (QC){% elif t.bid_eval == 'LC' %} — Least-Cost (LC){% elif t.bid_eval == 'L1' %} — Lowest-Price (L1){% endif %}</td></tr>
   </table>
 
   <h4 class="sec">2. Keyword Match Activation</h4>
@@ -47,6 +49,19 @@
       scope falls outside CSDirekt's service profile (museum AV / immersive
       cultural media / heritage projection / exhibition design).
     </p>
+  {% endif %}
+
+  <h4 class="sec">5. Eligibility Assessment — What Would Make CS Direkt Eligible</h4>
+  {% if t.gaps %}
+    <p><strong>Gaps that currently make CS Direkt ineligible:</strong></p>
+    <ul>{% for g in t.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if t.requirements %}
+    <p><strong>Tender requirements — fulfil these to qualify:</strong></p>
+    <ul>{% for r in t.requirements %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if not t.gaps and not t.requirements %}
+    <p class="narrative">This tender falls outside CS Direkt's core service profile — there is no realistic path to eligibility based on the capabilities in CS Direkt's documents.</p>
   {% endif %}
 
   {% if not t_is_last %}<hr class="tender-sep">{% endif %}

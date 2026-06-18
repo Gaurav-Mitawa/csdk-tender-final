@@ -28,6 +28,21 @@ VCLASS = {"ELIGIBLE": "eligible", "PARTIAL": "partial", "INELIGIBLE": "rejected"
 RISKCLASS = {"low": "low", "medium": "medium", "high": "high"}
 _EMPTY = {"", "[]", "{}", "null", "none", "n/a", "na", "-", "—", "[ ]"}
 
+# Bid-evaluation method classification → drives sort order within Eligible/Partial:
+# QC (quality-cum-cost) first, then LC (least-cost), then L1 (lowest-price), then others.
+_BIDORDER = {"QC": 0, "LC": 1, "L1": 2, "OTHER": 3}
+
+
+def _bid_eval(t: dict) -> str:
+    hay = " ".join(str(t.get(k) or "") for k in ("tender_type", "scope_summary", "raw_text")).lower()
+    if any(w in hay for w in ("qcbs", "quality and cost", "quality-cum-cost", "quality cum cost", "combined quality")):
+        return "QC"
+    if any(w in hay for w in ("lcs", "least cost", "least-cost", "lowest evaluated cost")):
+        return "LC"
+    if any(w in hay for w in ("l1", "lowest price", "lowest bidder", "item rate", "lowest quoted", "price bid", "financial bid")):
+        return "L1"
+    return "OTHER"
+
 
 def _get(path: str):
     return json.load(urllib.request.urlopen(urllib.request.Request(f"{settings.supabase_url}/rest/v1/{path}", headers=_H), timeout=60))
@@ -122,6 +137,7 @@ def _tctx(t):
         "authority_contact": t.get("authority_contact"), "portal": t.get("portal_name") or "TenderKart",
         "reference_number": t.get("reference_number"), "estimated_value": _money(t.get("estimated_value")),
         "emd": _emd(t.get("emd_amount")), "published": (t.get("published_at") or "")[:10] or None,
+        "pre_bid_date": (_clean(t.get("pre_bid_date")) or "—"), "bid_eval": _bid_eval(t),
         "submission_deadline": t.get("closing_date"), "technical_opening": t.get("opening_date") or "—",
         "tender_type": t.get("tender_type") or "—", "tender_type_confidence": ed.get("tender_type_confidence") or "",
         "tender_type_reasoning": ed.get("tender_type_basis") or "",
@@ -138,7 +154,7 @@ def _tctx(t):
         "risk_layperson_explanation": t.get("risk_layperson_explanation") or "",
         "eligibility_rows": _elig_rows(t), "eligibility_conditions": _slist(t.get("eligibility_conditions")),
         "gaps": _slist(t.get("gaps_to_address")), "pre_bid_queries": _prebid(t),
-        "pricing_feasibility": ex.get("pricing_feasibility") or "—",
+        "pricing_feasibility": _clean(ex.get("pricing_feasibility")) or "—",
         "epc_estimate": f"Rs. {ex.get('epc_estimate_cr')} Cr" if ex.get("epc_estimate_cr") else "—",
         "source_docs": _docs(t), "input_coverage": "", "page_refs": {}, "data_conflicts": [],
         "eligibility_flags": [
@@ -157,11 +173,15 @@ def _rctx(t):
         "verdict": "REJECTED", "title": t.get("title") or "(untitled)", "authority": t.get("issuing_authority") or "—",
         "portal": t.get("portal_name") or "TenderKart", "reference_number": t.get("reference_number"),
         "estimated_value": _money(t.get("estimated_value")), "closing_date": t.get("closing_date"),
+        "tender_type": t.get("tender_type") or "—", "bid_eval": _bid_eval(t),
+        "pre_bid_date": (_clean(t.get("pre_bid_date")) or "—"),
         "matched_keyword": t.get("matched_keyword") or "—",
         "disqualification_triggers": [{"name": d.get("name", ""), "evidence": d.get("evidence", "")}
                                       for d in (t.get("disqualification_triggers") or []) if isinstance(d, dict)],
         "business_logic_explanation": t.get("business_logic_explanation") or "",
         "reasons": _slist(t.get("reasons_rejected")),
+        "gaps": _slist(t.get("gaps_to_address")),
+        "requirements": _slist(t.get("eligibility_conditions")),
     }
 
 
@@ -219,6 +239,11 @@ def _build_context(run_id: str | None) -> dict:
     elig = [t for t in tenders if t.get("verdict") == "ELIGIBLE"]
     part = [t for t in tenders if t.get("verdict") == "PARTIAL"]
     rej = [t for t in tenders if t.get("verdict") == "INELIGIBLE"]
+    # Within Eligible & Partial, order by bid-evaluation type: QC → LC → L1 → other, then score desc.
+    def _bsort(t):
+        return (_BIDORDER.get(_bid_eval(t), 3), -(t.get("competitiveness_score") or 0))
+    elig.sort(key=_bsort)
+    part.sort(key=_bsort)
 
     # exec-summary grouped by matched keyword
     groups: dict[str, list] = {}
@@ -227,6 +252,7 @@ def _build_context(run_id: str | None) -> dict:
             "title": t.get("title") or "(untitled)", "authority": t.get("issuing_authority") or "—",
             "estimated_value": _money(t.get("estimated_value")), "verdict": t.get("verdict"),
             "verdict_class": VCLASS.get(t.get("verdict"), "rejected"),
+            "pre_bid_date": (_clean(t.get("pre_bid_date")) or "—"),
             "key_business_insight": (t.get("key_business_insight") or t.get("excluded_reason") or "")[:200],
         })
     grouped = sorted(groups.items(), key=lambda kv: -max((VORDER.get("ELIGIBLE", 0) == VORDER.get(r["verdict"]) for r in kv[1]), default=0))
