@@ -24,6 +24,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 _SYSTEM = (
     "You are the bidding company's tender assistant. You orchestrate the pipeline.\n"
+    "TONE: always reply in warm, clear, PROFESSIONAL ENGLISH — full sentences, like a helpful "
+    "human bid analyst talking to a colleague. Never terse, never robotic, no bare 'OK'. Acknowledge "
+    "what the user asked, say what you're doing, and what happens next. Keep it concise but human.\n"
     "- ANY 'find / fetch / get / search N tenders on <keyword>' (e.g. 'find 5 tenders on museum') means "
     "FETCH LIVE FROM THE TENDERKART API — ALWAYS call run_fresh_scan(keyword='museum', limit=5). This NEVER "
     "reads from the database; it pulls fresh from TenderKart and re-processes (duplicates are fine). The "
@@ -156,24 +159,9 @@ def _generate_report() -> dict:
         url = store.upload_report(rid, fh.read())
     rows = (service_client().table("tenders").select("title,verdict,competitiveness_score")
             .eq("run_id", rid).neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
-    b = {"ELIGIBLE": [], "PARTIAL": [], "INELIGIBLE": []}
-    for r in rows:
-        # Only bucket KNOWN verdicts — setdefault folded None/'PENDING' into INELIGIBLE,
-        # over-reporting the rejected count with tenders that were never evaluated.
-        if r.get("verdict") in b:
-            b[r["verdict"]].append(r)
-    lines = [f"📋 Report — {len(rows)} tenders: {len(b['ELIGIBLE'])} eligible · "
-             f"{len(b['PARTIAL'])} partially eligible · {len(b['INELIGIBLE'])} rejected"]
-    for lab, k in (("ELIGIBLE", "ELIGIBLE"), ("PARTIAL", "PARTIAL"), ("REJECTED", "INELIGIBLE")):
-        for r in b.get(k, []):
-            lines.append(f"• [{lab}] {(r.get('title') or '')[:70]} ({r.get('competitiveness_score')}/100)")
-    meta = {"report": True, "is_chat_reply": True}
-    if url:
-        lines.append("\nDownload the full PDF report below.")
-        meta["combined_url"] = url
-        meta["combined_name"] = "Tender Intelligence Report"
-    store.emit(rid, "success", "\n".join(lines), meta=meta)
-    return {"ok": True, "message": f"Posted the report for {len(rows)} tenders above (with PDF download link)."}
+    text, meta = store.build_report_message(rows, url)
+    store.emit(rid, "success", text, meta=meta)
+    return {"ok": True, "message": f"Posted the report for {len(rows)} tenders above (with the PDF download link)."}
 
 
 def _dispatch(name: str, args: dict) -> dict:

@@ -79,7 +79,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
       <div
         className={cn(
-          'group relative max-w-[78%] rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]',
+          'group relative rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]',
+          // Report messages carry a long grouped list — give them more room to breathe.
+          isAgent && message.combined_url ? 'max-w-[94%]' : 'max-w-[78%]',
           isAgent
             ? cn('rounded-tl-sm text-foreground', TYPE_ACCENT[message.type])
             : 'rounded-tr-sm border-amber-400/30 bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-orange-500/10 text-amber-900'

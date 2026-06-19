@@ -257,23 +257,8 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
         rows = (service_client().table("tenders")
                 .select("title,verdict,competitiveness_score").eq("run_id", run_id)
                 .neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
-        buckets: dict[str, list] = {"ELIGIBLE": [], "PARTIAL": [], "INELIGIBLE": []}
-        for r in rows:
-            # Only bucket KNOWN verdicts — setdefault used to fold None/'PENDING' into the
-            # INELIGIBLE list and report them as 'rejected' though they were never evaluated.
-            if r.get("verdict") in buckets:
-                buckets[r["verdict"]].append(r)
-        lines = [f"📋 Report — {len(rows)} tenders: {len(buckets['ELIGIBLE'])} eligible · "
-                 f"{len(buckets['PARTIAL'])} partially eligible · {len(buckets['INELIGIBLE'])} rejected"]
-        for label, key in (("ELIGIBLE", "ELIGIBLE"), ("PARTIAL", "PARTIAL"), ("REJECTED", "INELIGIBLE")):
-            for r in buckets.get(key, []):
-                lines.append(f"• [{label}] {(r.get('title') or '')[:70]} ({r.get('competitiveness_score')}/100)")
-        meta = {"report": True, "is_chat_reply": True}
-        if report_url:
-            lines.append("\nDownload the full PDF report below.")
-            meta["combined_url"] = report_url
-            meta["combined_name"] = "Tender Intelligence Report"
-        store.emit(run_id, "success", "\n".join(lines), meta=meta)
+        text, meta = store.build_report_message(rows, report_url)
+        store.emit(run_id, "success", text, meta=meta)
     except Exception as exc:  # noqa: BLE001
         log.warning("report summary failed: %s", exc)
 
