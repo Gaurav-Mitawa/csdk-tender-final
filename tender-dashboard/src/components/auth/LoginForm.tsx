@@ -50,10 +50,17 @@ export function LoginForm() {
         return
       }
       // Defensive: drop any prior operator's cached chat on a shared browser.
-      try {
-        window.localStorage.removeItem('tender-agent.chat.messages.v1')
-      } catch {
-        /* ignore */
+      for (const k of [
+        'tender-agent.chat.sessions.v1',
+        'tender-agent.chat.mergedCycleIds.v1',
+        'tender-agent.chat.messages.v2',
+        'tender-agent.chat.messages.v1',
+      ]) {
+        try {
+          window.localStorage.removeItem(k)
+        } catch {
+          /* ignore */
+        }
       }
       router.replace(next)
       router.refresh()

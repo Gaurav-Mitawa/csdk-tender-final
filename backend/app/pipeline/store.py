@@ -155,7 +155,10 @@ def _write_tender(row: dict, existing: str | None) -> str:
     if existing:
         service_client().table("tenders").update(row).eq("id", existing).execute()
         return existing
-    return service_client().table("tenders").insert(row).execute().data[0]["id"]
+    res = service_client().table("tenders").insert(row).execute()
+    # PostgREST returns the inserted row by default (service key bypasses RLS); guard the
+    # rare empty-representation case so a successful insert doesn't crash on data[0].
+    return res.data[0]["id"] if res.data else (tender_db_id(row.get("tenderkart_id")) or "")
 
 
 def upsert_tender(row: dict, tenderkart_id: str) -> str:

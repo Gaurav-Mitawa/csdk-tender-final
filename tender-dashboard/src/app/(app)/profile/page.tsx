@@ -127,6 +127,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [genning, setGenning] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [schedEnabled, setSchedEnabled] = useState(false)
+  const [schedTime, setSchedTime] = useState('09:00')
 
   useEffect(() => {
     ;(async () => {
@@ -138,6 +140,8 @@ export default function ProfilePage() {
         }
         const j = (await r.json().catch(() => ({}))) || {}
         setF(normalize(j))
+        setSchedEnabled(!!j.schedule_enabled)
+        setSchedTime(j.schedule_time_ist || '09:00')
         setMargins(marginsFromObj(j.partial_margins))
         setLegalItems(
           (j.legal_items || []).map((it: unknown) =>
@@ -195,6 +199,8 @@ export default function ProfilePage() {
       analysis_instructions: f.analysis_instructions || '',
       legal_items: legalItems.map((s) => s.trim()).filter(Boolean),
       partial_margins,
+      schedule_enabled: schedEnabled,
+      schedule_time_ist: schedTime,
       ...(scopeKw !== undefined ? { scope_keywords: scopeKw } : {}),
     }
     for (const key of NUM_KEYS) payload[key] = num(f[key] || '')
@@ -326,6 +332,36 @@ export default function ProfilePage() {
             <textarea value={f.scope_keywords || ''} onChange={set('scope_keywords')} rows={8}
               className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-amber-400/60" />
           </details>
+        </Section>
+
+        <Section title="Automated scheduler">
+          <p className="mb-3 text-[11px] text-muted-foreground">
+            Auto-run the agent every day at a set time (IST) — it fetches all live tenders from
+            TenderKart, processes them, stops when the live list is exhausted, and posts the report
+            to your chat. No need to click &ldquo;Run agent now&rdquo;.
+          </p>
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={schedEnabled}
+              onChange={(e) => setSchedEnabled(e.target.checked)}
+              className="h-4 w-4 accent-amber-500"
+            />
+            <span className="text-sm text-foreground">Enable daily auto-run</span>
+          </label>
+          <label className="mt-4 flex flex-col gap-1.5">
+            <span className="text-sm text-foreground">Run time (IST · 24-hour)</span>
+            <input
+              type="time"
+              value={schedTime}
+              onChange={(e) => setSchedTime(e.target.value)}
+              disabled={!schedEnabled}
+              className={`${INPUT} w-40 disabled:opacity-50`}
+            />
+            <span className="text-[11px] text-muted-foreground">
+              Runs once per day at this time, India Standard Time. The report appears in your chat session.
+            </span>
+          </label>
         </Section>
 
         <Section title="Similar past work experience">

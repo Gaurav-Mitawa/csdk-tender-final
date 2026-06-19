@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, LoaderCircle, Play, Send, Sparkles, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useInterventions } from '@/hooks/useInterventions'
+import { useChat } from '@/components/chat/ChatProvider'
 import { StatusBadge } from './StatusBadge'
 import { MessageBubble } from './MessageBubble'
 
@@ -16,7 +16,7 @@ export function ChatWindow() {
     addSystemMessage,
     addAgentMessage,
     addUserMessage,
-  } = useInterventions()
+  } = useChat()
 
   const [hasMounted, setHasMounted] = useState(false)
   const [running, setRunning] = useState(false)
@@ -136,7 +136,12 @@ export function ChatWindow() {
           </div>
           <div className="flex flex-col">
             <h1 className="font-mono text-[11px] uppercase tracking-[0.32em] text-muted-foreground">Tender · Agent · Console</h1>
-            <p className="font-serif text-lg italic leading-tight text-foreground">Live agent</p>
+            <p
+              style={{ fontFamily: "'Times New Roman', Georgia, serif" }}
+              className="text-lg font-normal not-italic leading-tight tracking-tight text-foreground"
+            >
+              Live agent
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">

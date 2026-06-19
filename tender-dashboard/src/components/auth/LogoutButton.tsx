@@ -13,15 +13,22 @@ export function LogoutButton() {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
     } finally {
-      // Chat is persisted to localStorage (useInterventions.ts STORAGE_KEY).
-      // Auth cookie clears server-side, but stale chat from a prior DB or
-      // user would otherwise survive logout. Wipe the chat cache so the
-      // next user lands on a clean conversation.
+      // Chat sessions are persisted to localStorage (see lib/chat/sessions.ts).
+      // Auth cookie clears server-side, but stale chat from a prior user would
+      // otherwise survive logout. Wipe every chat cache key so the next user
+      // lands on a clean conversation.
       if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.removeItem('tender-agent.chat.messages.v1')
-        } catch {
-          /* ignore quota/privacy errors */
+        for (const k of [
+          'tender-agent.chat.sessions.v1',
+          'tender-agent.chat.mergedCycleIds.v1',
+          'tender-agent.chat.messages.v2',
+          'tender-agent.chat.messages.v1',
+        ]) {
+          try {
+            window.localStorage.removeItem(k)
+          } catch {
+            /* ignore quota/privacy errors */
+          }
         }
       }
       router.replace('/login')

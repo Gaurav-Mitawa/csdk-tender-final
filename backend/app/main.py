@@ -7,9 +7,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import agent, auth, profile, runs
+from . import scheduler
+from .routers import agent, auth, chat, profile, runs
 
 app = FastAPI(title="Tender Agent Backend", version="0.1.0")
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    # Auto-fires the agent run at the IST time configured in Settings (best-effort;
+    # never blocks startup).
+    try:
+        scheduler.start()
+    except Exception:  # noqa: BLE001
+        pass
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +34,7 @@ app.include_router(auth.router)
 app.include_router(runs.router)
 app.include_router(profile.router)
 app.include_router(agent.router)
+app.include_router(chat.router)
 # TODO (next): tenders, reports routers.
 
 
