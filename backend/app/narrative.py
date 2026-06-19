@@ -122,7 +122,7 @@ def generate_narrative(row: dict, profile=None) -> dict:
         return {}
     # Hard per-request timeout: a hung Claude call would otherwise keep the per-tender
     # worker thread alive past the run (the executor timeout can't kill it), leaking threads.
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=90.0, max_retries=1)
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=float(settings.openai_timeout_sec), max_retries=settings.llm_max_retries)
     # Retry once: a transient Claude failure used to silently drop the whole narrative
     # (e.g. key_business_insight came back blank on some tenders).
     for attempt in (1, 2):

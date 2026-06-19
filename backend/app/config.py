@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     extract_text_limit: int = 200000        # chars of doc text sent to gpt-4o-mini (full RFP/BOQ; 128k-ctx headroom)
     ocr_min_confidence: float = 0.55        # below this => vision fallback
     max_tenders_per_run: int = 100
-    tender_timeout_sec: int = 240           # per-tender hard cap (4 min) — skip & continue if exceeded
+    tender_timeout_sec: int = 360           # per-tender hard cap (6 min) — skip & continue if exceeded
+    openai_timeout_sec: int = 150           # hard timeout per LLM call (extraction / vision / narrative)
+    llm_max_retries: int = 0                # client auto-retries on timeout (0 = don't double the wait)
     max_extract_doc_mb: int = 30            # skip PARSING docs larger than this (CPU-bound PyMuPDF
     #                                         can't be preempted by the watchdog on a shrunk-CPU host)
 

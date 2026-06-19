@@ -70,7 +70,7 @@ def _openai_fields(text: str, needed: list[str], scope_ctx: dict | None = None) 
 
         # Hard timeout: an unbounded OpenAI call would keep the per-tender worker thread
         # alive after the executor "timed out" (threads can't be killed) → thread leak.
-        client = OpenAI(api_key=settings.openai_api_key, timeout=90.0, max_retries=1)
+        client = OpenAI(api_key=settings.openai_api_key, timeout=float(settings.openai_timeout_sec), max_retries=settings.llm_max_retries)
         user = (
             f"Extract these fields: {needed}\n\n"
             "Return ONLY JSON. Shapes:\n"
@@ -127,7 +127,7 @@ def vision_ocr(png_bytes: bytes) -> str:
         from openai import OpenAI
 
         b64 = base64.b64encode(png_bytes).decode()
-        client = OpenAI(api_key=settings.openai_api_key, timeout=90.0, max_retries=1)
+        client = OpenAI(api_key=settings.openai_api_key, timeout=float(settings.openai_timeout_sec), max_retries=settings.llm_max_retries)
         resp = client.chat.completions.create(
             model=settings.openai_model,
             temperature=0,
