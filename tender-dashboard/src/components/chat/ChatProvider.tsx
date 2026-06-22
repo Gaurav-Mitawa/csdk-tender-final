@@ -297,8 +297,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         cycleSeen.current.add(r.id)
         const m = cycleToMessage(r)
         setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
-        // persist into the active session (server dedups by cycle_id across devices).
-        // Carry ALL link fields so report buttons survive a reload.
+        // The end-of-run REPORT is persisted to chat by the BACKEND now (so it survives a
+        // closed tab / long run). Only DISPLAY it live here — don't double-write it, which
+        // used to create duplicates. Other events (errors, chat replies) we still persist.
+        if (r.meta?.report || r.meta?.combined_url) return
         const meta: Record<string, string> = {}
         if (m.combined_url) meta.combined_url = m.combined_url
         if (m.combined_name) meta.combined_name = m.combined_name

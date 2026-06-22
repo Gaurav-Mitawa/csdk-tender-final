@@ -24,6 +24,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       if (ids.length) params.set('filter_ids', ids.join(','))
     }
+    // Forward the chat session that triggered the run so the backend can post the
+    // report back into it (validate it looks like a UUID/id, not arbitrary input).
+    const sessionId = url.searchParams.get('session_id')
+    if (sessionId && ID_RE.test(sessionId)) params.set('session_id', sessionId)
     const resp = await backendFetch(`/runs/trigger?${params}`, { method: 'POST' })
     const json = await resp.json().catch(() => ({}))
     return NextResponse.json(json, { status: resp.status })

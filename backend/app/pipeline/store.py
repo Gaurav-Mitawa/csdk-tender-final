@@ -109,42 +109,69 @@ def build_report_message(rows: list, report_url: str | None = None) -> tuple[str
     return "\n".join(out), meta
 
 
-def persist_scheduled_report(text: str, meta: dict | None, run_id: str) -> None:
-    """Save a scheduled run's report into chat history.
+def _target_session_id(c, session_id: str | None) -> str | None:
+    """Resolve which chat session a run's report belongs to.
 
-    A manual run's report is persisted by the browser (it copies the live cycle_event
-    into the active chat session). A scheduled run has no browser watching, so we write
-    it here: into a rolling "Automated scans" session owned by the account that uses the
-    app (the owner of the most recently active chat session). Best-effort — never raises.
+    Prefer the session the run was triggered from (session_id). Fall back to a rolling
+    "Automated scans" session under the most-recently-active account (scheduler runs, or
+    a manual run whose session we couldn't capture). Returns None only if there is no
+    account/session at all yet.
+    """
+    if session_id:
+        r = c.table("chat_sessions").select("id").eq("id", session_id).limit(1).execute().data
+        if r:
+            return r[0]["id"]
+    sess = c.table("chat_sessions").select("id,user_id").order("updated_at", desc=True).limit(1).execute().data
+    if not sess:
+        return None
+    uid = sess[0]["user_id"]
+    existing = (c.table("chat_sessions").select("id")
+                .eq("user_id", uid).eq("title", "Automated scans").limit(1).execute()).data
+    if existing:
+        return existing[0]["id"]
+    ins = c.table("chat_sessions").insert(
+        {"user_id": uid, "title": "Automated scans", "created_at": _utcnow(), "updated_at": _utcnow()}).execute()
+    return ins.data[0]["id"]
+
+
+def persist_report(text: str, meta: dict | None, run_id: str, session_id: str | None = None) -> None:
+    """Save a run's report into chat history — for EVERY run, browser open or not.
+
+    The browser only copies the live report into chat when it's watching at the moment a
+    run finishes; long runs (and scheduled runs) finished after the tab was closed, so the
+    report was lost from history. We now write it here, server-side, so it's always there
+    on reload. Idempotent + refreshable per run via cycle_id = report-<run_id>.
     """
     try:
         c = service_client()
-        sess = (c.table("chat_sessions").select("id,user_id")
-                .order("updated_at", desc=True).limit(1).execute()).data
-        if not sess:
+        sid = _target_session_id(c, session_id)
+        if not sid:
             return  # no account/session yet — nothing to attach to (cycle_events still recorded)
-        uid = sess[0]["user_id"]
-        existing = (c.table("chat_sessions").select("id")
-                    .eq("user_id", uid).eq("title", "Automated scans").limit(1).execute()).data
+        cycle_id = f"report-{run_id}"
+        row = _strip_nul({"session_id": sid, "role": "agent", "content": text,
+                          "type": "text", "meta": meta, "cycle_id": cycle_id})
+        existing = (c.table("chat_messages").select("id")
+                    .eq("session_id", sid).eq("cycle_id", cycle_id).limit(1).execute()).data
         if existing:
-            sid = existing[0]["id"]
+            c.table("chat_messages").update({"content": row["content"], "meta": row["meta"]}).eq("id", existing[0]["id"]).execute()
         else:
-            ins = c.table("chat_sessions").insert(
-                {"user_id": uid, "title": "Automated scans",
-                 "created_at": _utcnow(), "updated_at": _utcnow()}).execute()
-            sid = ins.data[0]["id"]
-        cycle_id = f"sched-{run_id}"
-        dup = (c.table("chat_messages").select("id")
-               .eq("session_id", sid).eq("cycle_id", cycle_id).limit(1).execute()).data
-        if dup:
-            return
-        c.table("chat_messages").insert(_strip_nul({
-            "session_id": sid, "role": "agent", "content": text,
-            "type": "text", "meta": meta, "cycle_id": cycle_id,
-        })).execute()
+            c.table("chat_messages").insert(row).execute()
         c.table("chat_sessions").update({"updated_at": _utcnow()}).eq("id", sid).execute()
     except Exception as exc:  # noqa: BLE001 — persistence must never break a run
-        log.warning("scheduled report persist failed: %s", exc)
+        log.warning("persist_report failed: %s", exc)
+
+
+def relink_tenders_to_run(tk_ids: list[str], run_id: str) -> None:
+    """Point already-stored tenders at the current run so the run's report shows ALL
+    currently-active tenders (not just the few new ones) — without re-processing them.
+    Chunked to keep the request URL within limits."""
+    ids = [i for i in (tk_ids or []) if i]
+    for i in range(0, len(ids), 50):
+        chunk = ids[i:i + 50]
+        try:
+            service_client().table("tenders").update({"run_id": run_id}).in_("tenderkart_id", chunk).execute()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("relink chunk failed: %s", exc)
 
 
 def upload_report(run_id: str, content: bytes) -> str | None:

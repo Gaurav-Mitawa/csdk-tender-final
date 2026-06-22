@@ -17,6 +17,7 @@ export function ChatWindow() {
     addSystemMessage,
     addAgentMessage,
     addUserMessage,
+    activeId,
   } = useChat()
 
   const [hasMounted, setHasMounted] = useState(false)
@@ -54,7 +55,12 @@ export function ChatWindow() {
     setRunning(true)
     addSystemMessage('Starting Tenderkart cycle…', 'info')
     try {
-      const res = await fetch('/api/runs/trigger', { method: 'POST' })
+      // Pass the active session so the backend posts the report back into THIS chat,
+      // even if the tab is closed before the run finishes.
+      const url = activeId
+        ? `/api/runs/trigger?session_id=${encodeURIComponent(activeId)}`
+        : '/api/runs/trigger'
+      const res = await fetch(url, { method: 'POST' })
       if (handleAuthExpiry(res.status)) return
       const json = await res.json().catch(() => ({}))
       if (res.ok) {

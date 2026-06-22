@@ -11,10 +11,14 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 def trigger(
     triggered_by: str = Query("manual"),
     filter_ids: str | None = Query(None),
+    session_id: str | None = Query(None),
     user=Depends(current_user),
 ):
     ids = [s for s in (filter_ids.split(",") if filter_ids else []) if s.strip()] or None
-    run_id = ingest.start_run(triggered_by=triggered_by, filter_ids=ids)
+    # session_id lets the backend post this run's report into the chat the user triggered
+    # it from — so the report shows up there even if they close the tab mid-run.
+    sid = (session_id or "").strip() or None
+    run_id = ingest.start_run(triggered_by=triggered_by, filter_ids=ids, chat_session_id=sid)
     if run_id is None:
         return JSONResponse({"error": "a cycle is already running"}, status_code=409)
     return {"run_id": run_id, "status": "queued"}

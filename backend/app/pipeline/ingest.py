@@ -74,7 +74,8 @@ def _valid_date(s) -> str | None:
 # ── public API used by the router ─────────────────────────────────────────────
 def start_run(triggered_by: str = "manual", filter_ids: list[str] | None = None,
               limit: int | None = None, reprocess: bool | None = None,
-              exclude_keywords: list[str] | None = None) -> str | None:
+              exclude_keywords: list[str] | None = None,
+              chat_session_id: str | None = None) -> str | None:
     global _active
     with _lock:
         if _active or store.is_running():
@@ -87,7 +88,7 @@ def start_run(triggered_by: str = "manual", filter_ids: list[str] | None = None,
             _active = False
         raise
     threading.Thread(target=_run_thread,
-                     args=(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by),
+                     args=(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by, chat_session_id),
                      daemon=True).start()
     return run_id
 
@@ -99,10 +100,10 @@ def latest_run_status() -> dict:
 def _run_thread(run_id: str, filter_ids: list[str] | None,
                 limit: int | None = None, reprocess: bool | None = None,
                 exclude_keywords: list[str] | None = None,
-                triggered_by: str = "manual") -> None:
+                triggered_by: str = "manual", chat_session_id: str | None = None) -> None:
     global _active
     try:
-        run_cycle(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by)
+        run_cycle(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by, chat_session_id)
     except Exception as exc:  # noqa: BLE001
         log.exception("cycle crashed")
         store.emit(run_id, "error", f"Cycle failed: {exc}")
@@ -116,7 +117,7 @@ def _run_thread(run_id: str, filter_ids: list[str] | None,
 def run_cycle(run_id: str, filter_ids: list[str] | None = None,
               limit: int | None = None, reprocess: bool | None = None,
               exclude_keywords: list[str] | None = None,
-              triggered_by: str = "manual") -> None:
+              triggered_by: str = "manual", chat_session_id: str | None = None) -> None:
     cap = int(limit) if limit else settings.max_tenders_per_run
     explicit = limit is not None   # chat 'find N' -> show X/N; manual full scan -> show running count
     reproc = settings.reprocess_existing if reprocess is None else bool(reprocess)
@@ -238,6 +239,21 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                          tenders_found=found, tenders_qualified=qualified, sites_succeeded=sites_done)
         return
 
+    # OPTION B — the report must show ALL currently-active tenders, not just the few NEW
+    # ones processed this run. Re-link every tender seen this scan to this run (cheap, no
+    # re-processing), so the run-scoped report + PDF below cover the full active list.
+    try:
+        store.relink_tenders_to_run(list(seen), run_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("relink failed: %s", exc)
+
+    # Backfill any missing narratives (e.g. tenders whose Claude call failed in an earlier
+    # run) so the report is complete. Bounded so it can't run away.
+    try:
+        _regen_missing_narratives(run_id, prof)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("narrative backfill failed: %s", exc)
+
     # Final phase — generate the PDF report, upload it, and post it (with download link) to the chat.
     store.emit(run_id, "info", "Generating report…",
                meta={"progress": {"pct": 92, "label": "Generating report…"}})
@@ -262,10 +278,11 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                 .neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
         text, meta = store.build_report_message(rows, report_url)
         store.emit(run_id, "success", text, meta=meta)
-        # A scheduled run has no browser to copy the report into chat history — persist it
-        # server-side so it's there when the user next opens the app.
-        if triggered_by == "scheduler":
-            store.persist_scheduled_report(text, meta, run_id)
+        # Persist the report to chat for EVERY run (not just scheduled). The browser only
+        # copies it when it's watching at finish-time; long runs / closed tabs lost it.
+        # Backend persistence makes it survive on reload regardless. Targets the session
+        # the run was triggered from.
+        store.persist_report(text, meta, run_id, session_id=chat_session_id)
     except Exception as exc:  # noqa: BLE001
         log.warning("report summary failed: %s", exc)
 
@@ -275,6 +292,48 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
     )
     store.emit(run_id, "success", f"Cycle complete — {found} tenders processed, {qualified} qualified.",
                meta={"progress": {"pct": 100, "label": "Done", "done": True}})
+
+
+def _regen_missing_narratives(run_id: str, profile, cap: int = 60) -> None:
+    """Regenerate narratives for tenders in this run that are missing one (e.g. an earlier
+    Claude failure) so the report is complete. No re-extraction — narrative only. Bounded."""
+    if not settings.anthropic_api_key:
+        return
+    from ..supabase_client import service_client
+    rows = (service_client().table("tenders").select("*")
+            .eq("run_id", run_id).neq("verdict", "EXCLUDED").limit(1000).execute().data or [])
+    done = 0
+    for row in rows:
+        if done >= cap:
+            log.info("narrative backfill hit cap (%d); remaining will fill on the next run", cap)
+            break
+        verdict = (row.get("verdict") or "").upper()
+        if verdict in ("ELIGIBLE", "PARTIAL"):
+            has = (row.get("narrative_fit") or "").strip()
+        else:  # INELIGIBLE
+            has = (row.get("business_logic_explanation") or "").strip() or (row.get("key_business_insight") or "").strip()
+        if has:
+            continue
+        try:
+            upd = generate_narrative(row, profile)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("regen narrative failed for %s: %s", str(row.get("id"))[:8], exc)
+            continue
+        if not upd:
+            continue
+        # text[] columns: wrap a bare string so the array insert doesn't fail (same guard
+        # the main ingest path applies after narration).
+        for _k in ("key_deliverables", "eligibility_conditions", "documents_required", "gaps_to_address"):
+            _v = upd.get(_k)
+            if isinstance(_v, str):
+                upd[_k] = [_v.strip()] if _v.strip() else None
+        try:
+            service_client().table("tenders").update(upd).eq("id", row["id"]).execute()
+            done += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning("regen narrative update failed for %s: %s", str(row.get("id"))[:8], exc)
+    if done:
+        log.info("regenerated %d missing narrative(s) for run %s", done, run_id[:8])
 
 
 def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, profile) -> str:

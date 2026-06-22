@@ -5,6 +5,7 @@ cannot.)"""
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from postgrest.exceptions import APIError
 
 from ..auth import current_user
 from ..supabase_client import service_client
@@ -97,7 +98,15 @@ def add_message(sid: str, body: dict, user=Depends(current_user)):
         "meta": body.get("meta"),
         "cycle_id": cycle_id,
     }
-    res = service_client().table("chat_messages").insert(row).execute()
+    try:
+        res = service_client().table("chat_messages").insert(row).execute()
+    except APIError as exc:
+        # The check above is not atomic: two tabs/devices saving the same run event at once
+        # both pass it and one loses to the unique (session_id, cycle_id) constraint. That's
+        # a successful no-op dedup, not a 500.
+        if getattr(exc, "code", None) == "23505":
+            return {"ok": True, "deduped": True}
+        raise
     # Bump updated_at; auto-title the session from its first user message.
     patch = {"updated_at": _now()}
     if role == "user" and (s.get("title") or "") in ("", "New chat"):
