@@ -118,7 +118,10 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
               limit: int | None = None, reprocess: bool | None = None,
               exclude_keywords: list[str] | None = None,
               triggered_by: str = "manual", chat_session_id: str | None = None) -> None:
-    cap = int(limit) if limit else settings.max_tenders_per_run
+    # 'Run agent now' (no explicit limit) → NO cap: process every active tender until the
+    # filters are exhausted, stopping only on completion or the Stop button. Only chat's
+    # 'find N' sets a cap.
+    cap = int(limit) if limit else None
     explicit = limit is not None   # chat 'find N' -> show X/N; manual full scan -> show running count
     reproc = settings.reprocess_existing if reprocess is None else bool(reprocess)
     # Rolling window: fetch tenders updated in the last N days (stays current, no hardcoded date).
@@ -177,7 +180,7 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                 if _stop.is_set():
                     stopped = True
                     break
-                if found >= cap:
+                if cap is not None and found >= cap:
                     store.emit(run_id, "warn", "Reached the tender cap — stopping early.")
                     break
                 tk_uuid = t["id"]
