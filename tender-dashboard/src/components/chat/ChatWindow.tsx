@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, LoaderCircle, Play, Send, Sparkles, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/components/chat/ChatProvider'
+import { logoutAndRedirect } from '@/lib/authClient'
 import { StatusBadge } from './StatusBadge'
 import { MessageBubble } from './MessageBubble'
 
@@ -26,13 +27,13 @@ export function ChatWindow() {
   const containerRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
-  // Session expired mid-use: the cookie's gone/stale and in-page fetches start
-  // 401ing. Bounce to login (preserving where we were) instead of showing a
-  // confusing dead chat.
+  // Session genuinely invalid: clear the cookie BEFORE bouncing to /login,
+  // otherwise the middleware sees the stale cookie and bounces /login → /,
+  // refreshing the page in a loop. (Transient failures now return 503, not 401,
+  // so a busy scan no longer trips this.)
   const handleAuthExpiry = (status: number): boolean => {
     if (status === 401) {
-      const next = encodeURIComponent(window.location.pathname)
-      window.location.href = `/login?next=${next}`
+      void logoutAndRedirect()
       return true
     }
     return false

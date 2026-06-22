@@ -116,6 +116,7 @@ class ExtractResult:
     content_hash: str = ""
     meta: dict = field(default_factory=dict)
     pages: list = field(default_factory=list)  # per-page text (for page-level source)
+    error: str | None = None   # set when parsing failed (corrupt/unsupported) → caller skips its text
 
 
 def _hash(b: bytes) -> str:
@@ -352,8 +353,8 @@ def extract(name: str, content: bytes) -> ExtractResult:
         else:
             # last resort: try plain text
             res = ExtractResult(ext or "unknown", content.decode("utf-8", "ignore").strip()[:20000])
-    except Exception as exc:  # noqa: BLE001
-        log.exception("extraction failed for %s", name)
-        res = ExtractResult(ext or "unknown", f"[extraction error: {exc}]")
+    except Exception as exc:  # noqa: BLE001 — corrupt/unsupported file: flag it, don't raise
+        log.warning("extraction failed for %s (corrupt or unsupported?): %s", name, exc)
+        res = ExtractResult(ext or "unknown", "", error=str(exc))
     res.content_hash = _hash(content)
     return res
