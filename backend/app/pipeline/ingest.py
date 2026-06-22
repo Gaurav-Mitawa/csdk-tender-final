@@ -305,7 +305,19 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
             store.emit(run_id, "info",
                        f"Skipped parsing oversized doc ({len(content) // (1024 * 1024)} MB): {name[:40]}")
             continue
-        res = extract(name, content)  # selectable text only (no OCR here)
+        # Parse selectable text (no OCR here). A corrupt/unreadable file from TenderKart
+        # must skip ITS text only — never abort this tender or the run. We still keep the
+        # original as a downloadable link (it may open fine for a human).
+        try:
+            res = extract(name, content)
+        except Exception as exc:  # noqa: BLE001 — belt-and-suspenders: extract() shouldn't raise
+            log.warning("doc extract %s failed — skipping: %s", name, exc)
+            res = ExtractResult(fmt="unreadable", markdown="", error=str(exc))
+        if res.error:
+            store.emit(run_id, "info", f"Skipped unreadable document: {name[:40]}")
+            res.markdown, res.pages = "", []   # drop any partial/garbage text
+            if not res.content_hash:
+                res.content_hash = hashlib.sha256(content).hexdigest()
         extracted.append({"doc": doc, "name": name, "content": content, "res": res, "url": url})
         hashes.append(res.content_hash)
 
