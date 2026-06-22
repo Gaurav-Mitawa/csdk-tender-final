@@ -9,6 +9,7 @@
 import { cookies } from 'next/headers'
 
 export const ACCESS_COOKIE = 'access_token'
+export const REFRESH_COOKIE = 'refresh_token'
 
 export const BACKEND =
   process.env.BACKEND_API_URL ?? 'http://localhost:9000'

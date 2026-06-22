@@ -23,7 +23,7 @@ _EDITABLE = {
     "gst_number", "pan_number", "certifications", "contractor_class", "can_form_jv",
     "auto_reject_risks", "no_go_locations", "partial_margin_pct", "partial_margins", "legal_items",
     "analysis_instructions",
-    "schedule_enabled", "schedule_time_ist",   # auto-run scheduler (IST); last_run is set by the scheduler itself
+    "schedule_enabled", "schedule_time_ist", "schedule_interval_days",  # auto-run scheduler (IST); last_run is set by the scheduler itself
 }
 
 

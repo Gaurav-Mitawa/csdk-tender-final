@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import { attemptRefresh, logoutAndRedirect } from '@/lib/authClient'
 import type { ChatMessage } from '@/lib/types'
 
 // Account-based chat: sessions + messages live in Supabase (scoped by the logged-in user
@@ -95,13 +96,22 @@ function localId(p: string): string {
   return `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-// fetch JSON; bounce to /login on 401 (session expired).
+// fetch JSON. On 401: try to refresh the session once and retry; only if that
+// fails do we log out + bounce to /login (after clearing the cookie, so we don't
+// loop). On any other non-OK (e.g. 503 while a scan saturates the API) we throw
+// WITHOUT logging out, so callers keep their current state instead of wiping it.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function j(url: string, init?: RequestInit): Promise<any> {
-  const r = await fetch(url, init)
+  let r = await fetch(url, init)
+  if (r.status === 401 && (await attemptRefresh())) {
+    r = await fetch(url, init) // retry once with the freshly-minted token
+  }
   if (r.status === 401) {
-    if (typeof window !== 'undefined') window.location.href = '/login'
+    await logoutAndRedirect()
     throw new Error('unauthorized')
+  }
+  if (!r.ok) {
+    throw new Error(`request_failed_${r.status}`)
   }
   return r.json().catch(() => ({}))
 }
@@ -193,6 +203,38 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       alive = false
     }
   }, [loadMessages])
+
+  // ── rehydrate the live progress bar on mount ──
+  // After a refresh mid-run, `progress` resets to null and only the NEXT cycle_event
+  // (minutes away) would bring it back. Pull the current run's latest progress event
+  // up front so the tracker reappears immediately instead of after ~4-5 minutes.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/runs/trigger') // GET → /runs/status
+        if (!res.ok) return
+        const run = await res.json().catch(() => ({}))
+        if (!alive || !run?.id || run.status !== 'running') return
+        const { data } = await supabase
+          .from('cycle_events')
+          .select('meta')
+          .eq('run_id', run.id)
+          .order('created_at', { ascending: false })
+          .limit(50)
+        const last = (data || []).find(
+          (r: { meta?: { progress?: RunProgress } }) => r?.meta?.progress,
+        )
+        const p = last?.meta?.progress
+        if (alive && p && !p.done) setProgress(p)
+      } catch {
+        /* best-effort — the realtime feed will catch up on the next event */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const touchSession = useCallback((id: string, titleFromUser?: string) => {
     setSessions((prev) => {

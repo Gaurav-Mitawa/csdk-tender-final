@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { LoaderCircle, Save, Sparkles, Plus, Trash2 } from 'lucide-react'
+import { logoutAndRedirect } from '@/lib/authClient'
 
 type Form = Record<string, string>
 type PItem = {
@@ -129,19 +130,21 @@ export default function ProfilePage() {
   const [msg, setMsg] = useState<string | null>(null)
   const [schedEnabled, setSchedEnabled] = useState(false)
   const [schedTime, setSchedTime] = useState('09:00')
+  const [schedInterval, setSchedInterval] = useState('1')
 
   useEffect(() => {
     ;(async () => {
       try {
         const r = await fetch('/api/profile')
         if (r.status === 401) {
-          window.location.href = '/login'
+          void logoutAndRedirect()
           return
         }
         const j = (await r.json().catch(() => ({}))) || {}
         setF(normalize(j))
         setSchedEnabled(!!j.schedule_enabled)
         setSchedTime(j.schedule_time_ist || '09:00')
+        setSchedInterval(String(j.schedule_interval_days || 1))
         setMargins(marginsFromObj(j.partial_margins))
         setLegalItems(
           (j.legal_items || []).map((it: unknown) =>
@@ -201,6 +204,7 @@ export default function ProfilePage() {
       partial_margins,
       schedule_enabled: schedEnabled,
       schedule_time_ist: schedTime,
+      schedule_interval_days: Math.max(1, Math.round(Number(schedInterval) || 1)),
       ...(scopeKw !== undefined ? { scope_keywords: scopeKw } : {}),
     }
     for (const key of NUM_KEYS) payload[key] = num(f[key] || '')
@@ -222,7 +226,7 @@ export default function ProfilePage() {
         body: JSON.stringify(payload),
       })
       if (r.status === 401) {
-        window.location.href = '/login'
+        void logoutAndRedirect()
         return
       }
       const rp = await fetch('/api/profile/portfolio', {
@@ -249,7 +253,7 @@ export default function ProfilePage() {
     try {
       const r = await fetch('/api/profile/generate-keywords', { method: 'POST' })
       if (r.status === 401) {
-        window.location.href = '/login'
+        void logoutAndRedirect()
         return
       }
       const j = await r.json().catch(() => ({}))
@@ -336,9 +340,9 @@ export default function ProfilePage() {
 
         <Section title="Automated scheduler">
           <p className="mb-3 text-[11px] text-muted-foreground">
-            Auto-run the agent every day at a set time (IST) — it fetches all live tenders from
-            TenderKart, processes them, stops when the live list is exhausted, and posts the report
-            to your chat. No need to click &ldquo;Run agent now&rdquo;.
+            Auto-run the agent on a schedule (IST) — it fetches all live tenders from TenderKart,
+            processes them, stops when the live list is exhausted, and saves the report to your chat
+            history. Same as clicking &ldquo;Run agent now&rdquo;, but automatic.
           </p>
           <label className="flex items-center gap-3">
             <input
@@ -347,21 +351,40 @@ export default function ProfilePage() {
               onChange={(e) => setSchedEnabled(e.target.checked)}
               className="h-4 w-4 accent-amber-500"
             />
-            <span className="text-sm text-foreground">Enable daily auto-run</span>
+            <span className="text-sm text-foreground">Enable scheduled auto-run</span>
           </label>
-          <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-sm text-foreground">Run time (IST · 24-hour)</span>
-            <input
-              type="time"
-              value={schedTime}
-              onChange={(e) => setSchedTime(e.target.value)}
-              disabled={!schedEnabled}
-              className={`${INPUT} w-40 disabled:opacity-50`}
-            />
-            <span className="text-[11px] text-muted-foreground">
-              Runs once per day at this time, India Standard Time. The report appears in your chat session.
-            </span>
-          </label>
+          <div className="mt-4 flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-foreground">Run every</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={schedInterval}
+                  onChange={(e) => setSchedInterval(e.target.value)}
+                  disabled={!schedEnabled}
+                  className={`${INPUT} w-24 disabled:opacity-50`}
+                />
+                <span className="text-sm text-muted-foreground">day(s)</span>
+              </div>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-foreground">At time (IST · 24-hour)</span>
+              <input
+                type="time"
+                value={schedTime}
+                onChange={(e) => setSchedTime(e.target.value)}
+                disabled={!schedEnabled}
+                className={`${INPUT} w-40 disabled:opacity-50`}
+              />
+            </label>
+          </div>
+          <span className="mt-2 block text-[11px] text-muted-foreground">
+            {schedEnabled
+              ? `Runs every ${Math.max(1, Math.round(Number(schedInterval) || 1))} day(s) at ${schedTime} IST. Set the interval to 1 for a daily run. The report is saved to your chat history.`
+              : 'Enable to schedule automatic runs.'}
+          </span>
         </Section>
 
         <Section title="Similar past work experience">

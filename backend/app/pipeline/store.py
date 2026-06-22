@@ -7,11 +7,33 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
 from ..config import settings
 from ..supabase_client import service_client
 
 log = logging.getLogger("store")
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _strip_nul(obj):
+    """Recursively remove NUL (\\x00) bytes from strings before any Postgres write.
+
+    Postgres text/jsonb columns cannot store \\u0000 — PDF/OCR extraction occasionally
+    yields embedded NULs, which otherwise fail the whole row insert with error 22P05
+    ("unsupported Unicode escape sequence") and silently drops that tender.
+    """
+    if isinstance(obj, str):
+        return obj.replace("\x00", "") if "\x00" in obj else obj
+    if isinstance(obj, dict):
+        return {k: _strip_nul(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_strip_nul(v) for v in obj]
+    return obj
+
 
 _MIME = {
     "pdf": "application/pdf", "html": "text/html", "htm": "text/html", "json": "application/json",
@@ -87,6 +109,44 @@ def build_report_message(rows: list, report_url: str | None = None) -> tuple[str
     return "\n".join(out), meta
 
 
+def persist_scheduled_report(text: str, meta: dict | None, run_id: str) -> None:
+    """Save a scheduled run's report into chat history.
+
+    A manual run's report is persisted by the browser (it copies the live cycle_event
+    into the active chat session). A scheduled run has no browser watching, so we write
+    it here: into a rolling "Automated scans" session owned by the account that uses the
+    app (the owner of the most recently active chat session). Best-effort — never raises.
+    """
+    try:
+        c = service_client()
+        sess = (c.table("chat_sessions").select("id,user_id")
+                .order("updated_at", desc=True).limit(1).execute()).data
+        if not sess:
+            return  # no account/session yet — nothing to attach to (cycle_events still recorded)
+        uid = sess[0]["user_id"]
+        existing = (c.table("chat_sessions").select("id")
+                    .eq("user_id", uid).eq("title", "Automated scans").limit(1).execute()).data
+        if existing:
+            sid = existing[0]["id"]
+        else:
+            ins = c.table("chat_sessions").insert(
+                {"user_id": uid, "title": "Automated scans",
+                 "created_at": _utcnow(), "updated_at": _utcnow()}).execute()
+            sid = ins.data[0]["id"]
+        cycle_id = f"sched-{run_id}"
+        dup = (c.table("chat_messages").select("id")
+               .eq("session_id", sid).eq("cycle_id", cycle_id).limit(1).execute()).data
+        if dup:
+            return
+        c.table("chat_messages").insert(_strip_nul({
+            "session_id": sid, "role": "agent", "content": text,
+            "type": "text", "meta": meta, "cycle_id": cycle_id,
+        })).execute()
+        c.table("chat_sessions").update({"updated_at": _utcnow()}).eq("id", sid).execute()
+    except Exception as exc:  # noqa: BLE001 — persistence must never break a run
+        log.warning("scheduled report persist failed: %s", exc)
+
+
 def upload_report(run_id: str, content: bytes) -> str | None:
     """Upload the generated PDF report to Storage (upsert) and return its public URL."""
     try:
@@ -108,7 +168,7 @@ def upload_report(run_id: str, content: bytes) -> str | None:
 def emit(run_id: str | None, level: str, message: str, meta: dict | None = None) -> None:
     try:
         service_client().table("cycle_events").insert(
-            {"run_id": run_id, "level": level, "message": message, "meta": meta}
+            _strip_nul({"run_id": run_id, "level": level, "message": message, "meta": meta})
         ).execute()
     except Exception as exc:  # noqa: BLE001 — narration must never break a run
         log.warning("cycle_events insert failed: %s", exc)
@@ -152,6 +212,7 @@ def tender_db_id(tenderkart_id: str) -> str | None:
 
 
 def _write_tender(row: dict, existing: str | None) -> str:
+    row = _strip_nul(row)
     if existing:
         service_client().table("tenders").update(row).eq("id", existing).execute()
         return existing
@@ -187,4 +248,4 @@ def replace_artifacts(tender_id: str, artifacts: list[dict]) -> None:
         return
     for a in artifacts:
         a["tender_id"] = tender_id
-    service_client().table("tender_artifacts").insert(artifacts).execute()
+    service_client().table("tender_artifacts").insert(_strip_nul(artifacts)).execute()

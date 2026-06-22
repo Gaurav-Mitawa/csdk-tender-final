@@ -28,7 +28,7 @@ def _profile_row() -> dict | None:
         res = (
             service_client()
             .table("company_profiles")
-            .select("id,schedule_enabled,schedule_time_ist,schedule_last_run")
+            .select("id,schedule_enabled,schedule_time_ist,schedule_interval_days,schedule_last_run")
             .is_("user_id", "null")
             .limit(1)
             .execute()
@@ -37,6 +37,29 @@ def _profile_row() -> dict | None:
     except Exception as exc:  # noqa: BLE001
         log.warning("scheduler profile read failed: %s", exc)
         return None
+
+
+def _interval_days(row: dict) -> int:
+    """How many days between auto-runs (>=1). 1 = daily (the original behaviour)."""
+    try:
+        return max(int(row.get("schedule_interval_days") or 1), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _due(last_run: str, today_date, interval: int) -> bool:
+    """True if a scheduled run is due: never run before, or >= `interval` days since
+    the last one (and not already today)."""
+    last = (last_run or "").strip()
+    if not last:
+        return True
+    if last == today_date.strftime("%Y-%m-%d"):
+        return False  # already fired today
+    try:
+        last_d = datetime.strptime(last, "%Y-%m-%d").date()
+    except ValueError:
+        return True  # malformed stamp → treat as never run
+    return (today_date - last_d).days >= interval
 
 
 def _tick() -> None:
@@ -48,17 +71,17 @@ def _tick() -> None:
         return
     now = datetime.now(_IST)
     today = now.strftime("%Y-%m-%d")
-    if row.get("schedule_last_run") == today:
-        return  # already fired today
     if now.strftime("%H:%M") != want:
         return  # not the scheduled minute (loop ticks every 30s, so each minute is checked)
+    if not _due(row.get("schedule_last_run"), now.date(), _interval_days(row)):
+        return  # fired recently — wait for the interval to elapse
     # Stamp the date FIRST so a slow run can't double-fire on the next tick.
     try:
         service_client().table("company_profiles").update({"schedule_last_run": today}).eq("id", row["id"]).execute()
     except Exception as exc:  # noqa: BLE001
         log.warning("scheduler mark failed: %s", exc)
         return
-    log.info("scheduler firing scheduled scan at %s IST", want)
+    log.info("scheduler firing scheduled scan at %s IST (every %d day(s))", want, _interval_days(row))
     rid = ingest.start_run(triggered_by="scheduler")  # no limit → all live tenders, report when done
     if rid is None:
         log.info("scheduler: a run is already active — skipped this fire")

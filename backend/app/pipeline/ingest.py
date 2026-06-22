@@ -87,7 +87,8 @@ def start_run(triggered_by: str = "manual", filter_ids: list[str] | None = None,
             _active = False
         raise
     threading.Thread(target=_run_thread,
-                     args=(run_id, filter_ids, limit, reprocess, exclude_keywords), daemon=True).start()
+                     args=(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by),
+                     daemon=True).start()
     return run_id
 
 
@@ -97,10 +98,11 @@ def latest_run_status() -> dict:
 
 def _run_thread(run_id: str, filter_ids: list[str] | None,
                 limit: int | None = None, reprocess: bool | None = None,
-                exclude_keywords: list[str] | None = None) -> None:
+                exclude_keywords: list[str] | None = None,
+                triggered_by: str = "manual") -> None:
     global _active
     try:
-        run_cycle(run_id, filter_ids, limit, reprocess, exclude_keywords)
+        run_cycle(run_id, filter_ids, limit, reprocess, exclude_keywords, triggered_by)
     except Exception as exc:  # noqa: BLE001
         log.exception("cycle crashed")
         store.emit(run_id, "error", f"Cycle failed: {exc}")
@@ -113,7 +115,8 @@ def _run_thread(run_id: str, filter_ids: list[str] | None,
 # ── the cycle ─────────────────────────────────────────────────────────────────
 def run_cycle(run_id: str, filter_ids: list[str] | None = None,
               limit: int | None = None, reprocess: bool | None = None,
-              exclude_keywords: list[str] | None = None) -> None:
+              exclude_keywords: list[str] | None = None,
+              triggered_by: str = "manual") -> None:
     cap = int(limit) if limit else settings.max_tenders_per_run
     explicit = limit is not None   # chat 'find N' -> show X/N; manual full scan -> show running count
     reproc = settings.reprocess_existing if reprocess is None else bool(reprocess)
@@ -259,6 +262,10 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                 .neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
         text, meta = store.build_report_message(rows, report_url)
         store.emit(run_id, "success", text, meta=meta)
+        # A scheduled run has no browser to copy the report into chat history — persist it
+        # server-side so it's there when the user next opens the app.
+        if triggered_by == "scheduler":
+            store.persist_scheduled_report(text, meta, run_id)
     except Exception as exc:  # noqa: BLE001
         log.warning("report summary failed: %s", exc)
 

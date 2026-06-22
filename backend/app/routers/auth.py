@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ..auth import current_user, login, signup
+from ..auth import current_user, login, refresh, signup
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -11,9 +11,18 @@ class Credentials(BaseModel):
     password: str
 
 
+class RefreshBody(BaseModel):
+    refresh_token: str
+
+
 @router.post("/login")
 def login_route(body: Credentials):
     return login(body.email, body.password)
+
+
+@router.post("/refresh")
+def refresh_route(body: RefreshBody):
+    return refresh(body.refresh_token)
 
 
 @router.post("/signup")
