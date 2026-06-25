@@ -111,7 +111,7 @@ def _search_tenders(keyword: str, limit: int = 10, status: str = "any") -> dict:
 
 
 def _run_fresh_scan(keyword: str | None = None, limit: int | None = None,
-                    exclude_keywords: list[str] | None = None) -> dict:
+                    exclude_keywords: list[str] | None = None, session_id: str | None = None) -> dict:
     n = max(1, int(limit)) if limit else settings.max_tenders_per_run
     fids = None
     if keyword and keyword.strip():
@@ -127,7 +127,7 @@ def _run_fresh_scan(keyword: str | None = None, limit: int | None = None,
     # time, which flips ELIGIBLE/PARTIAL/REJECTED) — already-ingested tenders are skipped,
     # so each scan only processes genuinely NEW tenders.
     run_id = ingest.start_run(triggered_by="chat", filter_ids=fids, limit=n,
-                              reprocess=False, exclude_keywords=excl)
+                              reprocess=False, exclude_keywords=excl, chat_session_id=session_id)
     if run_id is None:
         return {"started": False, "message": "A scan is already running — its report will appear here when it finishes."}
     scope = f"'{keyword}'" if (keyword and fids) else "all sectors"
@@ -137,7 +137,7 @@ def _run_fresh_scan(keyword: str | None = None, limit: int | None = None,
                        "The report (which are eligible / partial / rejected) will appear here when the scan finishes."}
 
 
-def _generate_report() -> dict:
+def _generate_report(session_id: str | None = None) -> dict:
     """Build the PDF report for the most recent run that has tenders, upload it, and post it
     (verdict breakdown + download link) to the chat. Works for stopped/completed runs alike."""
     import os
@@ -166,25 +166,26 @@ def _generate_report() -> dict:
             .eq("run_id", rid).neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
     text, meta = store.build_report_message(rows, url)
     store.emit(rid, "success", text, meta=meta)
-    # Persist into chat history so the report + PDF link SURVIVE a reload. The browser
-    # deliberately doesn't re-save report messages (backend owns them); without this the
-    # link showed once then vanished on refresh.
-    store.persist_report(text, meta, rid)
+    # Persist into chat history so the report + PDF link SURVIVE a reload, into the SESSION
+    # the user asked from (not the catch-all "Automated scans"). The browser deliberately
+    # doesn't re-save report messages (backend owns them); without this the link showed once
+    # then vanished on refresh.
+    store.persist_report(text, meta, rid, session_id=session_id)
     return {"ok": True, "message": f"Posted the report for {len(rows)} tenders above (with the PDF download link)."}
 
 
-def _dispatch(name: str, args: dict) -> dict:
+def _dispatch(name: str, args: dict, session_id: str | None = None) -> dict:
     try:
         if name == "search_tenders":
             return _search_tenders(args.get("keyword", ""), int(args.get("limit") or 10), args.get("status", "any"))
         if name == "run_fresh_scan":
-            return _run_fresh_scan(args.get("keyword"), args.get("limit"), args.get("exclude_keywords"))
+            return _run_fresh_scan(args.get("keyword"), args.get("limit"), args.get("exclude_keywords"), session_id=session_id)
         if name == "stop_scan":
             active = ingest.request_stop()
             return {"stopped": active,
                     "message": "Stopping the scan — background process halting." if active else "No scan is running."}
         if name == "generate_report":
-            return _generate_report()
+            return _generate_report(session_id=session_id)
     except Exception as exc:  # noqa: BLE001
         log.warning("tool %s failed: %s", name, exc)
         return {"error": str(exc)}
@@ -198,6 +199,7 @@ def chat(body: dict, user=Depends(current_user)):
     message = (body.get("message") or "").strip()
     if not message:
         return JSONResponse({"error": "empty message"}, status_code=400)
+    session_id = (body.get("session_id") or "").strip() or None  # post reports into THIS chat
     history = body.get("history") or []
     msgs = [{"role": "system", "content": _SYSTEM}]
     for h in history[-6:]:
@@ -222,7 +224,7 @@ def chat(body: dict, user=Depends(current_user)):
                                         for tc in m.tool_calls]})
             for tc in m.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
-                result = _dispatch(tc.function.name, args)
+                result = _dispatch(tc.function.name, args, session_id=session_id)
                 msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         return {"reply": "Started what I could. Say 'show me the report' once a scan finishes, "
                          "or rephrase your request."}

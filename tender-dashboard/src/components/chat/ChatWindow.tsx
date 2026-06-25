@@ -109,7 +109,7 @@ export function ChatWindow() {
       const res = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: text, history: recent }),
+        body: JSON.stringify({ message: text, history: recent, session_id: activeId }),
       })
       if (handleAuthExpiry(res.status)) return
       const json = await res.json().catch(() => ({}))
