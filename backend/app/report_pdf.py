@@ -380,6 +380,15 @@ def _build_context(run_id: str | None) -> dict:
         cycle = "ALL"
     tenders = [t for t in tenders if t.get("verdict") != "EXCLUDED"]
     tenders.sort(key=lambda t: (VORDER.get(t.get("verdict"), 9), -(t.get("competitiveness_score") or 0)))
+    # OOM guard: each tender detail block is ~7 pages, so rendering hundreds of them in
+    # WeasyPrint blows past the 2 GB instance (this is what crashed the service). Cap the
+    # PDF at the top-N by priority (eligible → partial → rejected, score desc). Normal
+    # capped runs have far fewer than this, so it only bites a legacy mega-run.
+    _MAX_PDF_TENDERS = 80
+    if len(tenders) > _MAX_PDF_TENDERS:
+        log.warning("report: %d non-excluded tenders exceeds PDF cap %d — rendering the top %d by priority",
+                    len(tenders), _MAX_PDF_TENDERS, _MAX_PDF_TENDERS)
+        tenders = tenders[:_MAX_PDF_TENDERS]
 
     elig = [t for t in tenders if t.get("verdict") == "ELIGIBLE"]
     part = [t for t in tenders if t.get("verdict") == "PARTIAL"]

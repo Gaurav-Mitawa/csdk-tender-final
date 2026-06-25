@@ -161,19 +161,6 @@ def persist_report(text: str, meta: dict | None, run_id: str, session_id: str | 
         log.warning("persist_report failed: %s", exc)
 
 
-def relink_tenders_to_run(tk_ids: list[str], run_id: str) -> None:
-    """Point already-stored tenders at the current run so the run's report shows ALL
-    currently-active tenders (not just the few new ones) — without re-processing them.
-    Chunked to keep the request URL within limits."""
-    ids = [i for i in (tk_ids or []) if i]
-    for i in range(0, len(ids), 50):
-        chunk = ids[i:i + 50]
-        try:
-            service_client().table("tenders").update({"run_id": run_id}).in_("tenderkart_id", chunk).execute()
-        except Exception as exc:  # noqa: BLE001
-            log.warning("relink chunk failed: %s", exc)
-
-
 def upload_report(run_id: str, content: bytes) -> str | None:
     """Upload the generated PDF report to Storage (upsert) and return its public URL."""
     try:

@@ -118,10 +118,9 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
               limit: int | None = None, reprocess: bool | None = None,
               exclude_keywords: list[str] | None = None,
               triggered_by: str = "manual", chat_session_id: str | None = None) -> None:
-    # 'Run agent now' (no explicit limit) → NO cap: process every active tender until the
-    # filters are exhausted, stopping only on completion or the Stop button. Only chat's
-    # 'find N' sets a cap.
-    cap = int(limit) if limit else None
+    # Each run processes up to `cap` NEW tenders. Anything beyond the cap is COUNTED (not
+    # processed) and offered to the user as a "reply yes to process the next batch" prompt.
+    cap = int(limit) if limit else settings.max_tenders_per_run
     explicit = limit is not None   # chat 'find N' -> show X/N; manual full scan -> show running count
     reproc = settings.reprocess_existing if reprocess is None else bool(reprocess)
     # Rolling window: fetch tenders updated in the last N days (stays current, no hardcoded date).
@@ -154,6 +153,7 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
     store.emit(run_id, "info", f"{len(filters)} filter(s) to scan since {sync_after[:10]}.")
 
     found = qualified = sites_done = 0
+    remaining_new = 0   # NEW tenders beyond the cap — counted (not processed), offered via 'reply yes'
     stopped = False
     seen: set[str] = set()   # tk_uuids handled this run — TenderKart returns the same tender
     #                          under multiple category filters; handle each ONCE (no dup count).
@@ -180,21 +180,26 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                 if _stop.is_set():
                     stopped = True
                     break
-                if cap is not None and found >= cap:
-                    store.emit(run_id, "warn", "Reached the tender cap — stopping early.")
-                    break
                 tk_uuid = t["id"]
                 if tk_uuid in seen:
                     continue   # same tender under another filter — already handled this run
                 seen.add(tk_uuid)
+                capped = cap is not None and found >= cap
                 # Below the ₹-floor (value disclosed) → reject outright, do NOT store.
                 _val_cr = (t.get("tender_value") or 0) / 1e7
                 if _val_cr and _val_cr < prof.min_tender_value_cr:
-                    store.emit(run_id, "info", f"Skipped (below ₹{prof.min_tender_value_cr} Cr floor): {(t.get('title') or '')[:40]}")
+                    if not capped:
+                        store.emit(run_id, "info", f"Skipped (below ₹{prof.min_tender_value_cr} Cr floor): {(t.get('title') or '')[:40]}")
                     continue
                 if not reproc and store.tender_db_id(tk_uuid):
                     continue  # already processed in a previous run — skip, so each scan
                     #            surfaces only genuinely NEW tenders (no repeats)
+                if capped:
+                    # Past the per-run cap: a genuinely NEW, processable tender. Count it so we
+                    # can offer "reply yes to process the next batch" — but do NOT process it now
+                    # (keeps each run's memory + runtime bounded; this is what fixed the OOM).
+                    remaining_new += 1
+                    continue
                 # Per-tender hard cap: run in a worker thread; if it exceeds the timeout,
                 # skip it and move on (the slow thread is abandoned, not awaited).
                 from concurrent.futures import ThreadPoolExecutor
@@ -242,16 +247,12 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                          tenders_found=found, tenders_qualified=qualified, sites_succeeded=sites_done)
         return
 
-    # OPTION B — the report must show ALL currently-active tenders, not just the few NEW
-    # ones processed this run. Re-link every tender seen this scan to this run (cheap, no
-    # re-processing), so the run-scoped report + PDF below cover the full active list.
-    try:
-        store.relink_tenders_to_run(list(seen), run_id)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("relink failed: %s", exc)
+    # NOTE: no re-link. Each tender belongs to the ONE run that first processed it and
+    # appears in exactly that run's report — never re-processed, never duplicated across
+    # reports. (This also keeps each report small, which is what fixed the PDF OOM.)
 
-    # Backfill any missing narratives (e.g. tenders whose Claude call failed in an earlier
-    # run) so the report is complete. Bounded so it can't run away.
+    # Backfill any missing narratives for THIS run's tenders (e.g. a Claude call that failed
+    # mid-run) so the report is complete. Bounded so it can't run away.
     try:
         _regen_missing_narratives(run_id, prof)
     except Exception as exc:  # noqa: BLE001
@@ -280,6 +281,12 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                 .select("title,verdict,competitiveness_score").eq("run_id", run_id)
                 .neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
         text, meta = store.build_report_message(rows, report_url)
+        if remaining_new > 0:
+            # Per-run limit reached and MORE new tenders remain — offer the next batch.
+            text += (f"\n\n⏳ {remaining_new} more new tender{'s' if remaining_new != 1 else ''} "
+                     f"are still waiting (this run processed the first {found}, the per-run limit). "
+                     f"Reply “yes” and I'll process the next batch of up to {cap}.")
+            meta["remaining_new"] = remaining_new
         store.emit(run_id, "success", text, meta=meta)
         # Persist the report to chat for EVERY run (not just scheduled). The browser only
         # copies it when it's watching at finish-time; long runs / closed tabs lost it.

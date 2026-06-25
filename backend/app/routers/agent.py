@@ -44,6 +44,11 @@ _SYSTEM = (
     "- 'stop / cancel / kill the scan' → call stop_scan (halts the running background scan).\n"
     "- 'report do' / 'show me the report' / 'report for the last tenders' → call generate_report "
     "(posts the verdict breakdown + PDF download link to the chat).\n"
+    "- CONTINUATION: if the previous report message said something like 'N more new tenders are still "
+    "waiting … reply yes to process the next batch', and the user now replies 'yes' / 'haan' / 'continue' "
+    "/ 'process the rest' / 'do it', call run_fresh_scan with NO keyword and limit=100 to process the NEXT "
+    "batch of new tenders. Already-processed tenders are skipped automatically, so this picks up where the "
+    "last run stopped. Do NOT call generate_report for this — start the scan.\n"
     "After run_fresh_scan returns, tell the user the scan started and the report will appear here when done. "
     "After search_tenders, list each as '<title> — <authority> — <value> — <verdict> (<score>/100)'. "
     "Never invent tenders; only use tool results."
@@ -161,6 +166,10 @@ def _generate_report() -> dict:
             .eq("run_id", rid).neq("verdict", "EXCLUDED").order("competitiveness_score", desc=True).execute().data or [])
     text, meta = store.build_report_message(rows, url)
     store.emit(rid, "success", text, meta=meta)
+    # Persist into chat history so the report + PDF link SURVIVE a reload. The browser
+    # deliberately doesn't re-save report messages (backend owns them); without this the
+    # link showed once then vanished on refresh.
+    store.persist_report(text, meta, rid)
     return {"ok": True, "message": f"Posted the report for {len(rows)} tenders above (with the PDF download link)."}
 
 
