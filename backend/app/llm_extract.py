@@ -20,6 +20,7 @@ _REGEXABLE = [
 ]
 # Semantic — always need the LLM.
 _SEMANTIC = [
+    "tender_title",
     "scope_summary", "issuing_authority_location", "location_of_execution",
     "key_deliverables", "eligibility_conditions", "unusual_clauses", "penalty_clauses",
     "sow_page_refs", "procurement_model", "commercial_model",
@@ -74,6 +75,7 @@ def _openai_fields(text: str, needed: list[str], scope_ctx: dict | None = None) 
         user = (
             f"Extract these fields: {needed}\n\n"
             "Return ONLY JSON. Shapes:\n"
+            '  "tender_title": string|null (the official NAME OF WORK / subject of the tender EXACTLY as written in the documents — a readable description of what is being procured, e.g. "Supply and installation of 21 laptops with 3-year warranty". NEVER return a reference/bid code such as "SNB/Laptop/26-27/02" or "WBPWD/SGE/LOK/NIeQ-01/26-27"; if the document only shows such a code and no descriptive name, return null),\n'
             '  "eligibility_conditions": [string], "key_deliverables": [string],\n'
             '  "unusual_clauses": [{"text": string, "pages": string}], "penalty_clauses": [{"text": string, "pages": string}],\n'
             '  "procurement_model": string|null (EPC / O&M / PPP / Concession / Turnkey),\n'

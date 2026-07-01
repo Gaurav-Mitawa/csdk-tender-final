@@ -266,6 +266,9 @@ def _tctx(t):
     _tt = _tt_raw or {"QC": "Quality-cum-Cost (QCBS)", "LC": "Least-Cost (LCS)",
                       "L1": "Lowest-Price (L1)"}.get(_bev) or _NA
     return {
+        "sr_no": t.get("_sr_no"),
+        "is_corrigendum": bool(t.get("is_corrigendum")),
+        "corrigendum_changes": t.get("corrigendum_changes") or [],
         "verdict": v, "verdict_class": VCLASS.get(v, "rejected"),
         "deadline_state": "ok", "days_to_close": None, "closing_date": t.get("closing_date"),
         "title": t.get("title") or "(untitled)", "authority": t.get("issuing_authority") or "—",
@@ -314,6 +317,9 @@ def _tctx(t):
 
 def _rctx(t):
     return {
+        "sr_no": t.get("_sr_no"),
+        "is_corrigendum": bool(t.get("is_corrigendum")),
+        "corrigendum_changes": t.get("corrigendum_changes") or [],
         "verdict": "REJECTED", "title": t.get("title") or "(untitled)", "authority": t.get("issuing_authority") or "—",
         "portal": t.get("portal_name") or "TenderKart", "reference_number": t.get("reference_number"),
         "estimated_value": _money(t.get("estimated_value")), "closing_date": t.get("closing_date"),
@@ -402,7 +408,14 @@ def _build_context(run_id: str | None) -> dict:
     # Executive-summary rows in the SAME order as the detailed sections
     # (eligible → partial → rejected, each QC → LC → L1) so the two match exactly.
     ordered = elig + part + rej
+    # Issue 1 — assign ONE global Sr. No. across the whole report (eligible → partial →
+    # rejected) and reuse it in BOTH the executive summary and the detailed sections, so the
+    # numbering matches exactly (e.g. partial continues after eligible, not restarting at 1).
+    for _i, _t in enumerate(ordered, 1):
+        _t["_sr_no"] = _i
     exec_rows = [{
+        "sr_no": t.get("_sr_no"),
+        "is_corrigendum": bool(t.get("is_corrigendum")),
         "title": t.get("title") or "(untitled)",
         "closing_date": (_clean(t.get("closing_date")) or "—"),
         "matched_keyword": t.get("matched_keyword") or "—",

@@ -60,8 +60,8 @@
     <tbody>
       {% for row in exec_rows %}
       <tr>
-        <td class="col-ser">{{ loop.index }}</td>
-        <td class="col-tender">{{ row.title }}<br><span class="ref">Last date: {{ row.closing_date }}</span></td>
+        <td class="col-ser">{{ row.sr_no }}</td>
+        <td class="col-tender">{{ row.title }}{% if row.is_corrigendum %} <span class="verdict-pill" style="background:#fff4d6;color:#9a6700">UPDATED</span>{% endif %}<br><span class="ref">Last date: {{ row.closing_date }}</span></td>
         <td class="col-keyword">{{ row.matched_keyword }}</td>
         <td class="col-authority">{{ row.authority }}</td>
         <td class="col-value">{{ row.estimated_value }}</td>
@@ -109,7 +109,7 @@
     these for the Bid &amp; Pricing committee.
   </p>
   {% for t in section_a %}
-    {% set t_index = loop.index %}
+    {% set t_index = t.sr_no %}
     {% set t_is_last = loop.last %}
     {% include '_tender_block.html.j2' %}
   {% endfor %}
@@ -123,7 +123,7 @@
     pre-bid clarification before commitment.
   </p>
   {% for t in section_b %}
-    {% set t_index = loop.index %}
+    {% set t_index = t.sr_no %}
     {% set t_is_last = loop.last %}
     {% include '_tender_block.html.j2' %}
   {% endfor %}
@@ -142,7 +142,7 @@
     behind the rejection.
   </p>
   {% for t in section_c %}
-    {% set t_index = loop.index %}
+    {% set t_index = t.sr_no %}
     {% set t_is_last = loop.last %}
     {% include '_rejected_block.html.j2' %}
   {% endfor %}

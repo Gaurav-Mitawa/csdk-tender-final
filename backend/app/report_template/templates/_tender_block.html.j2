@@ -2,8 +2,16 @@
   <h3 class="tender-heading">
     <span class="tender-idx">#{{ t_index }}</span>
     <span class="verdict-pill verdict-{{ t.verdict_class }}">{{ t.verdict }}</span>
+    {% if t.is_corrigendum %}<span class="verdict-pill" style="background:#fff4d6;color:#9a6700">UPDATED · CORRIGENDUM</span>{% endif %}
     <span class="tender-title">{{ t.title }}</span>
   </h3>
+
+  {% if t.is_corrigendum and t.corrigendum_changes %}
+  <p class="callout" style="border-color:#9a6700;color:#9a6700;background:#fff8e6">
+    <strong>🔄 Corrigendum — this tender was amended since the last report. Changes:</strong>
+    {% for c in t.corrigendum_changes %}{{ c.field }}: {{ c.old }} &rarr; {{ c.new }}{% if not loop.last %}; {% endif %}{% endfor %}
+  </p>
+  {% endif %}
 
   {% if t.deadline_state == 'expired' %}
   <p class="callout" style="background:#eee;color:#555;border-color:#ccc">

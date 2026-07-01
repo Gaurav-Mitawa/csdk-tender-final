@@ -52,6 +52,18 @@ def python_fields(text: str) -> dict:
     t = text or ""
     out: dict = {}
 
+    # Name of Work / subject of the tender AS WRITTEN in the document — used to replace a
+    # TenderKart "title" that is really just a reference/bid code (free first pass).
+    m = re.search(
+        r"(?:name\s+of\s+(?:the\s+)?work|name\s+of\s+work|subject\s+of\s+(?:the\s+)?(?:tender|work|nit)|work\s+description)\s*[:\-]\s*(.{8,180}?)(?:\r|\n|$)",
+        t, re.I,
+    )
+    if m:
+        nw = re.sub(r"\s+", " ", m.group(1)).strip(" .:-–—")
+        # Reject a captured value that is itself just a code (few letters, has a slash).
+        if len(nw) >= 8 and sum(c.isalpha() for c in nw) >= 8:
+            out["name_of_work"] = nw
+
     tov = _amount_near(t, r"(?:average\s+)?(?:annual\s+)?turnover")
     if tov is not None:
         out["min_turnover_cr"] = tov

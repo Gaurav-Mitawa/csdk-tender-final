@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from . import scheduler
-from .routers import agent, auth, chat, profile, runs
+from .routers import agent, auth, chat, profile, runs, tenders
 
 app = FastAPI(title="Tender Agent Backend", version="0.1.0")
 
@@ -35,7 +35,8 @@ app.include_router(runs.router)
 app.include_router(profile.router)
 app.include_router(agent.router)
 app.include_router(chat.router)
-# TODO (next): tenders, reports routers.
+app.include_router(tenders.router)
+# TODO (next): reports router.
 
 
 @app.get("/health")

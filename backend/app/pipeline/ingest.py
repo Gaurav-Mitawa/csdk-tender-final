@@ -20,6 +20,7 @@ from ..llm_extract import hybrid_extract
 from ..narrative import generate_narrative
 from ..profile import load_profile
 from ..qualify import qualify, scope_check, title_excluded
+from ..titles import _norm, clean_display_title
 from . import store
 from .extract import ExtractResult, extract, vision_recover
 from .tenderkart import TenderKart
@@ -69,6 +70,54 @@ def _date_part(iso: str | None) -> str | None:
 
 def _valid_date(s) -> str | None:
     return s if isinstance(s, str) and _DATE_RE.match(s) else None
+
+
+# ── dedup / corrigendum identity ──────────────────────────────────────────────
+def _identity_key(detail: dict) -> str | None:
+    """Stable identity for a real-world tender: normalized title + authority + reference.
+
+    A re-list (a NEW TenderKart uuid for the same tender) collides on this key, so it is
+    caught as a duplicate/corrigendum. Genuinely different tenders that merely share a
+    generic title stay separate because the reference number is part of the key.
+    """
+    title = _norm(detail.get("title"))
+    org = _norm(detail.get("organisation"))
+    ref = _norm(detail.get("tender_reference_number"))
+    if not title and not ref:
+        return None
+    return f"{title}|{org}|{ref}"
+
+
+def _fmt_inr(v) -> str:
+    try:
+        return f"₹{float(v) / 1e7:.2f} Cr"
+    except Exception:  # noqa: BLE001
+        return str(v)
+
+
+def _corrigendum_changes(old: dict, detail: dict) -> list[dict]:
+    """What changed between a stored tender and its re-listed version.
+
+    Empty list => nothing material changed => an exact duplicate (skip it). A non-empty
+    list => a corrigendum: the same tender with an amended deadline / value / EMD."""
+    changes: list[dict] = []
+    new_close = _date_part(detail.get("closing_at"))
+    old_close = (str(old.get("closing_date") or "")[:10]) or None
+    if new_close and old_close and new_close != old_close:
+        changes.append({"field": "Submission deadline", "old": old_close, "new": new_close})
+    try:
+        nv, ov = detail.get("tender_value"), old.get("estimated_value")
+        if nv and ov and round(float(nv)) != round(float(ov)):
+            changes.append({"field": "Estimated value", "old": _fmt_inr(ov), "new": _fmt_inr(nv)})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        ne, oe = detail.get("emd_fee"), old.get("emd_amount")
+        if ne and oe and round(float(ne)) != round(float(oe)):
+            changes.append({"field": "EMD", "old": _fmt_inr(oe), "new": _fmt_inr(ne)})
+    except Exception:  # noqa: BLE001
+        pass
+    return changes
 
 
 # ── public API used by the router ─────────────────────────────────────────────
@@ -220,6 +269,8 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                     log.warning("tender %s failed: %s", tk_uuid, exc)
                     store.emit(run_id, "warn", f"Skipped a tender ({tk_uuid[:8]}): {exc}")
                     continue
+                if verdict == "DUPLICATE":
+                    continue  # exact re-list — already stored & reported; don't count/tick
                 found += 1
                 f_count += 1
                 if _stop.is_set():   # stopped mid-tender → don't emit a stray progress tick
@@ -349,6 +400,27 @@ def _regen_missing_narratives(run_id: str, profile, cap: int = 60) -> None:
 def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, profile) -> str:
     detail = tk.get_tender(tk_uuid)
 
+    # DEDUP / CORRIGENDUM — the same real tender is often re-listed by TenderKart under a
+    # NEW uuid (a new closing date / minor amendment). The uuid skip in run_cycle can't
+    # catch that, so match on a content identity (title+authority+reference). If we already
+    # stored this tender under a different uuid:
+    #   • nothing material changed  -> exact duplicate: skip (saves tokens, no repeat)
+    #   • deadline/value/EMD changed -> CORRIGENDUM: update the SAME row in place + record
+    #     what changed, so it appears once (flagged) with its changes — not as a new copy.
+    identity = _identity_key(detail)
+    existing = store.tender_by_identity(identity) if identity else None
+    corr_changes: list[dict] = []
+    corr_target_id: str | None = None
+    if existing and existing.get("tenderkart_id") != tk_uuid:
+        corr_changes = _corrigendum_changes(existing, detail)
+        if not corr_changes:
+            store.emit(run_id, "info",
+                       f"Skipped duplicate (already reported): {(detail.get('title') or '')[:42]}")
+            return "DUPLICATE"
+        corr_target_id = existing.get("id")
+        store.emit(run_id, "info",
+                   f"Corrigendum — updating existing tender: {(detail.get('title') or '')[:42]}")
+
     # COST GATE — cheap scope check on the summary; if clearly out of scope, skip
     # the expensive document download + extraction + LLM entirely.
     pre_text = " ".join(str(detail.get(k) or "") for k in ("title", "tender_category", "product_category", "organisation"))
@@ -448,14 +520,27 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
         (json.dumps(detail, sort_keys=True, default=str) + "".join(hashes)).encode()
     ).hexdigest()
 
+    # Issue 2 — TenderKart sometimes puts the reference/bid CODE in `title`. Prefer the real
+    # "Name of Work" the extractor read out of the document (document-extracted, not invented);
+    # fall back to the scope summary, then the raw code as a last resort.
+    display_title = clean_display_title(
+        detail.get("title"),
+        reference=detail.get("tender_reference_number"),
+        extracted_title=(ex.get("tender_title") or ex.get("name_of_work")),
+        scope_summary=ex.get("scope_summary"),
+    )
+
     # 3) build the tenders row. TK + Py + EXTRACT fields now; verdict/score/risk
     #    (RULES) and narrative (Claude) layers are filled later.
     row = {
         "run_id": run_id,
         "tenderkart_id": tk_uuid,
         "content_hash": content_hash,
+        "content_identity": identity,
+        "is_corrigendum": bool(corr_changes),
+        "corrigendum_changes": corr_changes or None,
         "portal_name": detail.get("portal_name") or "tenderkart",
-        "title": detail.get("title") or "(untitled)",
+        "title": display_title or "(untitled)",
         "reference_number": detail.get("tender_reference_number"),
         "issuing_authority": detail.get("organisation"),
         "issuing_authority_location": ex.get("issuing_authority_location"),
@@ -533,7 +618,9 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
         if isinstance(_v, str):
             row[_k] = [_v.strip()] if _v.strip() else None
 
-    tender_id = store.upsert_tender(row, tk_uuid)
+    # For a corrigendum, update the SAME existing row (found by identity) so the tender
+    # keeps one copy; otherwise upsert by tenderkart_id as usual.
+    tender_id = store.upsert_tender(row, tk_uuid, existing_id=corr_target_id)
     store.replace_artifacts(tender_id, artifacts)
     log.info("saved: %s | %s score=%s | docs=%d | fields=%d",
              (detail.get("title") or "")[:40], row["verdict"], row.get("competitiveness_score"),
