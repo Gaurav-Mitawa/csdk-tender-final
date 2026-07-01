@@ -285,6 +285,10 @@ def build_report(run_id: str | None = None, out_path: str = "/mnt/c/Users/sinha/
     prof = (_get("company_profiles?user_id=is.null&select=*") or [{}])[0]
     tenders = [t for t in tenders if t.get("verdict") != "EXCLUDED"]  # excluded → not in the report at all
     tenders.sort(key=lambda t: (VORDER.get(t.get("verdict"), 9), -(t.get("competitiveness_score") or 0)))
+    # Issue 1 — one global Sr. No. reused by BOTH the executive summary and the detailed
+    # sections (eligible → partial → rejected), so the numbering matches across the report.
+    for _i, _t in enumerate(tenders, 1):
+        _t["_sr_no"] = _i
 
     counts = {k: sum(1 for t in tenders if t.get("verdict") == k) for k in ("ELIGIBLE", "PARTIAL", "INELIGIBLE")}
     doc = Document()
@@ -312,9 +316,9 @@ def build_report(run_id: str | None = None, out_path: str = "/mnt/c/Users/sinha/
     tb = doc.add_table(rows=1, cols=6)
     tb.style = "Table Grid"
     _header_row(tb, ["Sl", "Tender Title", "Issuing Authority", "Estimated Value", "Strategic Fit Status", "Key Business Action / Insight"])
-    for n, t in enumerate(tenders, 1):
+    for t in tenders:
         c = tb.add_row().cells
-        c[0].text = str(n)
+        c[0].text = str(t.get("_sr_no"))
         c[1].text = (t.get("title") or "")[:90]
         c[2].text = (t.get("issuing_authority") or "")[:40]
         c[3].text = _money_cr(t.get("estimated_value"))
@@ -326,13 +330,13 @@ def build_report(run_id: str | None = None, out_path: str = "/mnt/c/Users/sinha/
     rej = [t for t in tenders if t.get("verdict") == "INELIGIBLE"]
     if elig:
         doc.add_page_break(); doc.add_heading("Section A — Fully Eligible", level=1)
-        for i, t in enumerate(elig, 1): _deep_block(doc, t, i)
+        for t in elig: _deep_block(doc, t, t.get("_sr_no"))
     if part:
         doc.add_heading("Section B — Partially Eligible", level=1)
-        for i, t in enumerate(part, 1): _deep_block(doc, t, i)
+        for t in part: _deep_block(doc, t, t.get("_sr_no"))
     if rej:
         doc.add_heading("Section C — Rejected", level=1)
-        for i, t in enumerate(rej, 1): _rejected_block(doc, t, i)
+        for t in rej: _rejected_block(doc, t, t.get("_sr_no"))
 
     doc.save(out_path)
     return out_path

@@ -225,8 +225,39 @@ def tender_db_id(tenderkart_id: str) -> str | None:
     return res.data[0]["id"] if res.data else None
 
 
-def _write_tender(row: dict, existing: str | None) -> str:
-    row = _strip_nul(row)
+def tender_by_identity(identity_key: str | None) -> dict | None:
+    """Find an already-stored tender by its content identity (title+authority+reference).
+
+    Used to catch re-lists / corrigenda that arrive under a NEW tenderkart_id. Returns
+    None (safe: treated as new) if the `content_identity` column doesn't exist yet — so
+    the code deploys fine even before the migration is applied."""
+    if not identity_key:
+        return None
+    try:
+        res = (service_client().table("tenders")
+               .select("id,tenderkart_id,run_id,closing_date,estimated_value,emd_amount,verdict,title")
+               .eq("content_identity", identity_key)
+               .order("created_at", desc=True).limit(1).execute())
+        return res.data[0] if res.data else None
+    except Exception as exc:  # noqa: BLE001 — column may not exist pre-migration
+        log.debug("tender_by_identity skipped (%s)", exc)
+        return None
+
+
+# Columns added by the dedup/corrigendum migration — stripped-and-retried if the
+# migration hasn't been applied yet, so a deploy never hard-fails on a missing column.
+_OPTIONAL_TENDER_COLS = ("content_identity", "is_corrigendum", "corrigendum_changes", "corrigendum_of")
+
+
+def _unknown_column(exc) -> bool:
+    code = getattr(exc, "code", None)
+    if code in ("42703", "PGRST204"):
+        return True
+    msg = (getattr(exc, "message", None) or str(exc)).lower()
+    return ("column" in msg and "does not exist" in msg) or "could not find" in msg
+
+
+def _persist_tender(row: dict, existing: str | None) -> str:
     if existing:
         service_client().table("tenders").update(row).eq("id", existing).execute()
         return existing
@@ -236,15 +267,30 @@ def _write_tender(row: dict, existing: str | None) -> str:
     return res.data[0]["id"] if res.data else (tender_db_id(row.get("tenderkart_id")) or "")
 
 
-def upsert_tender(row: dict, tenderkart_id: str) -> str:
-    """Insert or update by tenderkart_id (no unique constraint needed). Returns row id.
+def _write_tender(row: dict, existing: str | None) -> str:
+    from postgrest.exceptions import APIError
 
-    If a legacy CHECK constraint rejects a value, retry once with the enum-ish
-    fields sanitized so the tender still persists.
+    row = _strip_nul(row)
+    try:
+        return _persist_tender(row, existing)
+    except APIError as exc:
+        if _unknown_column(exc):
+            log.warning("tenders: unknown column (dedup migration pending?) — stripping %s and retrying",
+                        _OPTIONAL_TENDER_COLS)
+            return _persist_tender({k: v for k, v in row.items() if k not in _OPTIONAL_TENDER_COLS}, existing)
+        raise
+
+
+def upsert_tender(row: dict, tenderkart_id: str, existing_id: str | None = None) -> str:
+    """Insert or update. Returns row id.
+
+    `existing_id` (a corrigendum's already-stored row) takes precedence; otherwise
+    match by tenderkart_id. If a legacy CHECK constraint rejects a value, retry once
+    with the enum-ish field sanitized so the tender still persists.
     """
     from postgrest.exceptions import APIError
 
-    existing = tender_db_id(tenderkart_id)
+    existing = existing_id or tender_db_id(tenderkart_id)
     try:
         return _write_tender(row, existing)
     except APIError as exc:
@@ -253,6 +299,49 @@ def upsert_tender(row: dict, tenderkart_id: str) -> str:
             row = {**row, "risk_level": None}  # only sanitize the offending field
             return _write_tender(row, existing)
         raise
+
+
+def report_url_for_run(run_id: str | None) -> str | None:
+    """Public URL of a run's generated PDF report (uploaded to Storage at a fixed path)."""
+    if not run_id:
+        return None
+    try:
+        return service_client().storage.from_(settings.storage_bucket).get_public_url(
+            f"reports/tender_report_{run_id[:8]}.pdf")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def search_tenders(q: str, limit: int = 20) -> list[dict]:
+    """Issue 9 — search tenders by name / reference / authority; attach the report link."""
+    # Strip PostgREST-reserved characters so a stray comma/paren can't break the or() filter.
+    q_safe = re.sub(r"[,()*:%]", " ", (q or "")).strip()
+    if not q_safe:
+        return []
+    pat = f"*{q_safe}*"  # PostgREST ilike wildcard is '*' (maps to SQL '%')
+    c = service_client()
+    try:
+        rows = (c.table("tenders")
+                .select("id,title,reference_number,issuing_authority,verdict,closing_date,run_id,competitiveness_score")
+                .or_(f"title.ilike.{pat},reference_number.ilike.{pat},issuing_authority.ilike.{pat}")
+                .neq("verdict", "EXCLUDED")
+                .order("created_at", desc=True).limit(limit).execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        log.warning("search_tenders failed: %s", exc)
+        return []
+    # Only offer a report link for runs that actually COMPLETED (a report PDF was generated),
+    # so we never hand back a 404 link for a failed/aborted run.
+    run_ids = list({r["run_id"] for r in rows if r.get("run_id")})
+    completed: set[str] = set()
+    if run_ids:
+        try:
+            rr = (c.table("tender_runs").select("id,status").in_("id", run_ids).execute()).data or []
+            completed = {x["id"] for x in rr if x.get("status") == "completed"}
+        except Exception as exc:  # noqa: BLE001
+            log.debug("run-status lookup skipped: %s", exc)
+    for r in rows:
+        r["report_url"] = report_url_for_run(r["run_id"]) if r.get("run_id") in completed else None
+    return rows
 
 
 # ── tender_artifacts (documents) ─────────────────────────────────────────────

@@ -27,6 +27,7 @@ export type RunProgress = {
 export interface SessionMeta {
   id: string
   title: string
+  createdAt: string
   updatedAt: string
 }
 
@@ -177,9 +178,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     ;(async () => {
       try {
         const data = await j('/api/chat/sessions')
-        let list: SessionMeta[] = (data?.sessions || []).map((s: { id: string; title: string; updated_at: string }) => ({
+        let list: SessionMeta[] = (data?.sessions || []).map((s: { id: string; title: string; created_at?: string; updated_at: string }) => ({
           id: s.id,
           title: s.title || 'New chat',
+          createdAt: s.created_at ?? new Date().toISOString(),
           updatedAt: s.updated_at,
         }))
         if (!list.length) {
@@ -188,7 +190,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             headers: { 'content-type': 'application/json' },
             body: '{}',
           })
-          if (created?.id) list = [{ id: created.id, title: created.title || 'New chat', updatedAt: created.updated_at }]
+          if (created?.id)
+            list = [
+              {
+                id: created.id,
+                title: created.title || 'New chat',
+                createdAt: created.created_at ?? new Date().toISOString(),
+                updatedAt: created.updated_at,
+              },
+            ]
         }
         if (!alive) return
         setSessions(list)
@@ -336,7 +346,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         body: '{}',
       })
       if (created?.id) {
-        setSessions((prev) => [{ id: created.id, title: created.title || 'New chat', updatedAt: created.updated_at }, ...prev])
+        setSessions((prev) => [
+          {
+            id: created.id,
+            title: created.title || 'New chat',
+            createdAt: created.created_at ?? new Date().toISOString(),
+            updatedAt: created.updated_at,
+          },
+          ...prev,
+        ])
         setActiveId(created.id)
         cycleSeen.current = new Set()
         setMessages([])

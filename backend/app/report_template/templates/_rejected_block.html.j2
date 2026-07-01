@@ -2,6 +2,7 @@
   <h3 class="tender-heading">
     <span class="tender-idx">#{{ t_index }}</span>
     <span class="verdict-pill verdict-rejected">{{ t.verdict }}</span>
+    {% if t.is_corrigendum %}<span class="verdict-pill" style="background:#fff4d6;color:#9a6700">UPDATED · CORRIGENDUM</span>{% endif %}
     <span class="tender-title">{{ t.title }}</span>
   </h3>
 
