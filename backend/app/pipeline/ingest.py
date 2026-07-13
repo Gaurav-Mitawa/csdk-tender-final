@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from ..config import settings
@@ -271,6 +272,8 @@ def run_cycle(run_id: str, filter_ids: list[str] | None = None,
                     continue
                 if verdict == "DUPLICATE":
                     continue  # exact re-list — already stored & reported; don't count/tick
+                if verdict == "DOCS_PENDING":
+                    continue  # documents not ready (temporary) — NOT stored; next scan retries
                 found += 1
                 f_count += 1
                 if _stop.is_set():   # stopped mid-tender → don't emit a stray progress tick
@@ -397,6 +400,24 @@ def _regen_missing_narratives(run_id: str, profile, cap: int = 60) -> None:
         log.info("regenerated %d missing narrative(s) for run %s", done, run_id[:8])
 
 
+def _transient_download_error(exc: Exception | None) -> bool:
+    """True for a MOMENTARY document-download failure — the file exists but wasn't
+    downloadable right now, so retrying later will work. Per the TenderKart API docs a
+    document that isn't ready yet returns HTTP 409 ("Document is not available yet. Retry
+    later."); 429 is rate-limit and 5xx is a server error — all temporary. A 404
+    (permanently missing) is NOT transient. TenderKart exposes a tender before its
+    attachments finish syncing, so a fresh tender's docs can 409 for a short while."""
+    if exc is None:
+        return False
+    import requests
+
+    from .tenderkart import RateLimited
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError, RateLimited)):
+        return True
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    return isinstance(code, int) and (code in (409, 429) or 500 <= code < 600)
+
+
 def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, profile) -> str:
     detail = tk.get_tender(tk_uuid)
 
@@ -428,15 +449,30 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
 
     # STEP 1 — "Ctrl+A": copy all selectable text from every document.
     extracted, hashes = [], []
+    transient_dl_fail = 0   # docs that failed to download with a TEMPORARY error (not ready yet)
     if pre_excluded:
         store.emit(run_id, "info", f"Out of scope — skipped extraction: {(detail.get('title') or '')[:42]}")
     for doc in (detail.get("documents", []) if not pre_excluded else []):
         doc_id = doc.get("id")
         name = doc.get("name", doc_id or "document")
-        try:
-            content = tk.download_document(doc_id)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("doc download %s failed: %s", name, exc)
+        content = None
+        last_exc: Exception | None = None
+        for _attempt in range(2):   # one quick in-run retry — the second try often succeeds
+            try:
+                content = tk.download_document(doc_id)
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if _transient_download_error(exc) and _attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
+        if content is None:
+            if _transient_download_error(last_exc):
+                transient_dl_fail += 1
+                store.emit(run_id, "info", f"Document not ready yet (temporary): {name[:40]}")
+            else:  # 404 / permanent — the file genuinely isn't there; process with the rest
+                log.warning("doc download %s failed (permanent): %s", name, last_exc)
             continue
         url = store.upload_document(tk_uuid, doc_id, name, content) if settings.upload_documents else None
         if len(content) > settings.max_extract_doc_mb * 1024 * 1024:
@@ -461,6 +497,18 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
                 res.content_hash = hashlib.sha256(content).hexdigest()
         extracted.append({"doc": doc, "name": name, "content": content, "res": res, "url": url})
         hashes.append(res.content_hash)
+
+    # DOCUMENT-READINESS GUARD — if ANY of this tender's documents failed to download with a
+    # TEMPORARY error (even if some succeeded), the tender's document set is incomplete right
+    # now. Do NOT judge or store it on a partial set — a missing RFP/BOQ could make a real
+    # tender look out-of-scope and silently drop it. Skip WITHOUT storing so the next scheduled
+    # scan re-fetches it once every document is downloadable (usually within a day). 404s
+    # (permanently missing) are NOT transient, so genuinely doc-light tenders still process.
+    if not pre_excluded and transient_dl_fail:
+        store.emit(run_id, "warn",
+                   f"Documents not ready yet ({transient_dl_fail} temporary fail) — will retry "
+                   f"next scan: {(detail.get('title') or '')[:42]}")
+        return "DOCS_PENDING"
 
     def _docname(name: str) -> str:
         # The scraped HTML detail page is the TenderKart listing, not a tender document —

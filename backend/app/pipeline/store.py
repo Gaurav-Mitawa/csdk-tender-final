@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ..config import settings
 from ..supabase_client import service_client
@@ -109,13 +109,25 @@ def build_report_message(rows: list, report_url: str | None = None) -> tuple[str
     return "\n".join(out), meta
 
 
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _automated_session_title() -> str:
+    """Per-DAY chat session for automated/scheduled scans, e.g. 'Automated scans — 13 Jul 2026'.
+
+    Each day's automated scans get their own dated session (runs on the same day share it),
+    instead of everything piling into one rolling 'Automated scans' session."""
+    ist = datetime.now(_IST)
+    return f"Automated scans — {ist.day} {ist.strftime('%b %Y')}"
+
+
 def _target_session_id(c, session_id: str | None) -> str | None:
     """Resolve which chat session a run's report belongs to.
 
-    Prefer the session the run was triggered from (session_id). Fall back to a rolling
-    "Automated scans" session under the most-recently-active account (scheduler runs, or
-    a manual run whose session we couldn't capture). Returns None only if there is no
-    account/session at all yet.
+    Prefer the session the run was triggered from (session_id). Otherwise fall back to a
+    per-DAY 'Automated scans — <date>' session under the most-recently-active account
+    (scheduler runs, or a manual run whose session we couldn't capture). Returns None only
+    if there is no account/session at all yet.
     """
     if session_id:
         r = c.table("chat_sessions").select("id").eq("id", session_id).limit(1).execute().data
@@ -125,12 +137,13 @@ def _target_session_id(c, session_id: str | None) -> str | None:
     if not sess:
         return None
     uid = sess[0]["user_id"]
+    title = _automated_session_title()
     existing = (c.table("chat_sessions").select("id")
-                .eq("user_id", uid).eq("title", "Automated scans").limit(1).execute()).data
+                .eq("user_id", uid).eq("title", title).limit(1).execute()).data
     if existing:
         return existing[0]["id"]
     ins = c.table("chat_sessions").insert(
-        {"user_id": uid, "title": "Automated scans", "created_at": _utcnow(), "updated_at": _utcnow()}).execute()
+        {"user_id": uid, "title": title, "created_at": _utcnow(), "updated_at": _utcnow()}).execute()
     return ins.data[0]["id"]
 
 
