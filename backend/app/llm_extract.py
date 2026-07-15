@@ -57,9 +57,17 @@ def _scope_block(scope_ctx: dict | None) -> str:
         "business line. Judge the REAL subject — do NOT be misled by a superficial keyword overlap that "
         "does not reflect the actual scope (e.g. the word 'event' inside 'Security Information and Event "
         "Management (SIEM)' is a cybersecurity system, NOT an events tender). If the tender clearly belongs "
-        "to a domain the company does not operate in, OR matches the out-of-scope list, set in_scope=false. "
-        'Add to JSON: "scope_fit": {"in_scope": true|false, "category": string|null (which in-scope service '
-        'line it fits, or null), "reason": string (<=25 words, why it fits or not)}'
+        "to a domain the company does not operate in, OR matches the out-of-scope list, set in_scope=false.\n"
+        "COMPOSITE RULE: if the scope is a MIX of civil-construction/building work AND an experiential or "
+        "exhibit component (gallery, museum, science-centre / planetarium, interactive or immersive exhibit, "
+        "AV / multimedia / sound-&-light, diorama, theming / artwork, tourism attraction, experience-centre "
+        "fit-out), do NOT set in_scope=false merely because construction is the larger share. Instead set "
+        "in_scope=true, composite=true and category='composite' — the company can bid as the experiential-design "
+        "/ turnkey partner. Set in_scope=false ONLY when there is NO experiential / exhibit element at all "
+        "(pure civil, road, structural, supply, manpower or maintenance work).\n"
+        'Add to JSON: "scope_fit": {"in_scope": true|false, "composite": true|false, "category": string|null '
+        '(which in-scope service line it fits, or "composite", or null), "reason": string (<=25 words, why it '
+        'fits or not)}'
     )
 
 

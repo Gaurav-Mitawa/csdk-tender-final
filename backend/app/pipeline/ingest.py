@@ -445,7 +445,15 @@ def _ingest_tender(tk: TenderKart, tk_uuid: str, filter_name: str, run_id: str, 
     # COST GATE — cheap scope check on the summary; if clearly out of scope, skip
     # the expensive document download + extraction + LLM entirely.
     pre_text = " ".join(str(detail.get(k) or "") for k in ("title", "tender_category", "product_category", "organisation"))
-    pre_excluded = scope_check(pre_text, profile)["excluded"] or title_excluded(str(detail.get("title") or ""), profile)
+    _sc_pre = scope_check(pre_text, profile)
+    _title_exc = title_excluded(str(detail.get("title") or ""), profile)
+    # COMPOSITE / AMBIGUOUS: the tender ALSO matches the company's own in-scope anchors (e.g. a
+    # museum / gallery / exhibit inside a "Construction of …" title). Don't hard-drop it on the blunt
+    # title keyword — download the documents and let the AI scope-fit judge. A genuine composite
+    # (construction + experiential) then becomes PARTIAL in the report instead of being silently
+    # dropped; a truly out-of-scope one is still EXCLUDED by the AI after reading the documents.
+    _composite_maybe = _title_exc and _sc_pre["in_scope"]
+    pre_excluded = (_sc_pre["excluded"] or _title_exc) and not _composite_maybe
 
     # STEP 1 — "Ctrl+A": copy all selectable text from every document.
     extracted, hashes = [], []

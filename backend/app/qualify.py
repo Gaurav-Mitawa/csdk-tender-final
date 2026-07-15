@@ -113,10 +113,17 @@ def qualify(row: dict, profile: Profile) -> dict:
     # below are a deterministic backstop that also honours explicit user/profile exclusions.
     _fit = (row.get("extracted_data") or {}).get("scope_fit") or {}
     _llm_in_scope = _fit.get("in_scope")
+    _composite = _fit.get("composite") is True
     _title_exc = title_excluded(str(row.get("title") or ""), profile)
 
+    # A composite construction + experiential/exhibit tender (AI-flagged), OR one the AI positively
+    # judged in-scope after reading the FULL documents, is NOT hard-dropped by the blunt title/keyword
+    # backstop — it flows through to scoring (composite is then capped at PARTIAL below). This only
+    # ever fires for tenders that reached the AI; pre-excluded ones keep _llm_in_scope=None → EXCLUDED.
+    _rescue = _composite or (_llm_in_scope is True)
+
     # 1) Exclusion gate — LLM says out of scope, OR a keyword/title exclusion fired.
-    if _llm_in_scope is False or sc["excluded"] or _title_exc:
+    if (_llm_in_scope is False or sc["excluded"] or _title_exc) and not _rescue:
         if _title_exc:
             reason = "Out of scope — exclusion keyword in the tender title"
         elif _llm_in_scope is False:
@@ -205,6 +212,18 @@ def qualify(row: dict, profile: Profile) -> dict:
             reasons_r.append(f"{label} required ₹{_req} Cr exceeds capacity ₹{_cap} Cr within +{_margin:.0f}% margin (borderline → PARTIAL, highlighted)")
         else:
             reasons_r.append(f"{label} required ₹{_req} Cr is {fl['over_pct']}% over capacity ₹{_cap} Cr — PARTIAL via JV/consortium (highlighted)")
+
+    # Composite construction + experiential/exhibit tender: never EXCLUDE and never mark 100%
+    # ELIGIBLE — present as PARTIAL so it lands in the report and is flagged for manual review
+    # (the company bids as the experiential-design / turnkey partner, not a civil-only contractor).
+    # Hard financial gates (below-floor / above-ceiling) still win and stay INELIGIBLE.
+    if _fit.get("composite") is True and not floor_failed and not over_max:
+        if verdict != "PARTIAL":
+            verdict = "PARTIAL"
+            reasons_r.append(
+                "Composite construction + experiential/exhibit scope — flagged PARTIAL for manual review; "
+                f"bid as the experiential-design / turnkey partner (not civil-only). {_fit.get('reason') or ''}".strip()
+            )
 
     if sc["matched_categories"]:
         reasons_q.append("Scope matches: " + ", ".join(sc["matched_categories"]))
